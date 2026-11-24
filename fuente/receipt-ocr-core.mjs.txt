@@ -1,0 +1,268 @@
+/* v0.14 candidata (NO desplegada): interpretacion de tickets. Nucleo PURO (sin DOM, sin red, sin OCR): texto por lineas -> compra propuesta + conciliacion.
+   Reglas: importes en CENTIMOS ENTEROS; nada se inventa (nombre dudoso = «Artículo sin identificar»); el total solo se da por bueno si lo corroboran
+   al menos DOS fuentes independientes; lo ENTREGADO nunca se propone como total; el resultado es siempre una PROPUESTA que una persona confirma.
+   Entrada: array de lineas, cada una string o {text, conf, numConf} (conf 0-100 media de la linea; numConf = minima de las palabras con digitos). */
+import {validDate,MAX_CENTS} from './shared-purchases-core.mjs';
+export const NAME_UNKNOWN='Artículo sin identificar';
+export const LEVELS={complete:'Completo',partial:'Parcial',total_only:'Solo total',insufficient:'Insuficiente'};
+const NAME_MIN_CONF=65,NUM_MIN_CONF=80;
+const norm=s=>String(s).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase();
+const AMT_SRC='(-?)(\\d{1,3}(?:\\.\\d{3})+|\\d{1,6})[.,](\\d{2})(?!\\d)(-?)';
+const amtRe=()=>new RegExp('(?<![\\d.,])'+AMT_SRC,'g');
+/* Confusiones tipicas del OCR SOLO dentro de fichas con forma de importe (digitos con separador decimal y dos decimales). Devuelve {text,fixed}. */
+export function fixDigits(text){let fixed=false;const out=String(text).split(/(\s+)/).map(tok=>{if(/^-?[\dOoIl|SB]{1,6}[.,][\dOoIl|SB]{2}[-€]*$/.test(tok)&&/\d/.test(tok)&&/[OoIl|SB]/.test(tok)){fixed=true;return tok.replace(/[Oo]/g,'0').replace(/[Il|]/g,'1').replace(/S/g,'5').replace(/B/g,'8');}return tok;});return {text:out.join(''),fixed};}
+export function amounts(text){const out=[];for(const m of String(text).matchAll(amtRe())){const c=Number(m[2].replace(/\./g,''))*100+Number(m[3]);out.push({cents:c,neg:!!(m[1]||m[4]),start:m.index,end:m.index+m[0].length,raw:m[0]});}return out;}
+const fmt=c=>(c/100).toFixed(2).replace('.',',');
+export const fmtCents=fmt;
+const RE_TOTAL=/\b(TOTAL|A PAGAR|IMPORTE TOTAL)\b/,RE_TOTAL_NOT=/SUBTOTAL|TOTAL\s+(A\s+)?(DESC|DTO|AHORR|IVA|ARTIC|ART\b|UNID|PROD|PUNTOS|BASE|CUOTA|PROMO)|\b(BASE|CUOTA)\b/;
+const LABELISH=/^\s*(T?O?TAL\w{0,2}|LOTAL|TOTAI|TOTA|ENTREGA\w*|SUMA|IMP\w*|PAGO|PAGADO|EFECTIVO|TARJETA|CAMBIO|A PAGAR|SUBTOTAL)\s*$/;
+const RE_NOT_TOTAL_ANY=/DESC|DTO|AHORR|OFERTA|PROMO|\bPLUS\b|CLUB|PUNTOS|SOCIO|VENTAJ|ACUMUL|SALDO|CHEQUE|CUPON|BONIF|DEVOL|\bIVA\b|\bBASE\b|CUOTA|ENTREG|CAMBIO/,RE_SAV_WORD=/DESC|DTO|AHORR|OFERTA|PROMO|\bPLUS\b|CLUB|CUPON|BONIF|VENTAJ|ACUMUL|SALDO/,RE_CARD_CTX=/TARJETA|VISA|MASTERCARD|CONTACTLESS|DEBITO|CREDITO|BIZUM|VENTA|AUTORIZ|TERMINAL|COMERCIO|\bAID\b/;
+const RE_SAV_SUM=/(TOTAL|SUMA|SUS|ACUMULADO)\s*(DE\s*)?(AHORR|DESC|DTO|PROMO)|AHORR\w*\s+TOTAL|TOTAL\s+AHORRADO/;
+const RE_TEND=/\b(ENTREGADO|EFECTIVO|RECIBIDO|ENTREGA|IMPORTE ENTREGADO|PAGADO)\b/,RE_CHANGE=/\b(CAMBIO|DEVUELTO|VUELTA)\b/,RE_CARD=/\b(TARJETA|VISA|MASTERCARD|CONTACTLESS|DEBITO|CREDITO|BIZUM)\b/;
+const RE_DISC=/\b(DESCUENTO|DESC|DTO|DTOS|PROMO|PROMOCION|OFERTA|AHORRO|CUPON|BONIF|BONIFICACION|2X1|3X2)\b/;
+const RE_TAX=/\b(IVA|CUOTA|BASE IMP\w*|IMPUESTOS?)\b|^\s*\d+([.,]\d+)?\s*%/;
+const RE_NOISE=/\b(CLUB|ACUMUL\w*|VENTAJ\w*|TIPO|CIF|NIF|TEL|TLF|TELEFONO|FACTURA|SIMPLIFICADA|TICKET|OPERACION|OP|TERMINAL|AUT|AUTORIZ\w*|CAJA|GRACIAS|WWW|HTTP\w*|AVDA|CALLE|PLAZA|CP|EMAIL|DESCRIPCION|CANT|CLIENTE|SOCIO|PUNTOS|SALDO|PEDIDO|HORA|FECHA|ARTICULOS|DEVOLUCIONES|IMPORTE)\b|^(C\/|AV\.|PZA)|N\.?I\.?F/;
+const CIFS=[['LIDL',/A60195278/],['CARREFOUR',/A28425270/],['MERCADONA',/A46103834/]];
+const CHAINS=[['MERCADONA',/MERCADONA/],['CARREFOUR',/CARREFOUR/],['LIDL',/\bLIDL\b/],['DIA',/\bDIA\b|SUPERMERCADOS DIA/],['ALCAMPO',/ALCAMPO/],['EROSKI',/EROSKI/],['AHORRAMAS',/AHORRAMAS|AHORRA MAS/],['CONSUM',/\bCONSUM\b/],['ALDI',/\bALDI\b/],['CAPRABO',/CAPRABO/],['BON PREU',/BON ?PREU/],['GADIS',/\bGADIS\b/],['HIPERCOR',/HIPERCOR|EL CORTE INGLES/]];
+/* v0.18: dos importes pegados por cajas contiguas («10,000,91») se separan; los formatos con miles («1.234,56») no se tocan. */
+const unglue=s=>s.replace(/(?<![\d.,])(\d{1,4}[.,]\d{2})(\d{1,4}[.,]\d{2})(?![\d.,])/g,(m,a,b)=>/^\d{1,3}(\.\d{3})+,\d{2}$/.test(m)?m:a+' '+b);
+function prep(input){return input.map((x,i)=>{const o=typeof x==='string'?{text:x}:x;const f=fixDigits(String(o.text||'').replace(/[\u0000-\u001f\u007f\u200b-\u200f\ufeff]/g,' ').replace(/\s+/g,' ').replace(/(\d) +([.,]\d{2})(?!\d)/g,'$1$2').replace(/\(\s*(\d[\d.,]*)\s*\)/g,'$1').trim());if(!/%/.test(f.text))f.text=unglue(f.text);return {i,text:f.text,u:norm(f.text),fixed:f.fixed,conf:o.conf??100,numConf:o.numConf??o.conf??100};});}
+const cleanName=s=>s.replace(/^[\s.,:;*#\-_|]+|[\s.,:;*#\-_|]+$/g,'').replace(/\s{2,}/g,' ').slice(0,120);
+function nameOk(name,conf){const letters=(name.match(/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/g)||[]).length;if(letters<3)return false;if(letters/Math.max(1,name.replace(/\s/g,'').length)<0.6)return false;if(conf<NAME_MIN_CONF)return false;if(/(.)\1{3,}/.test(name))return false;return true;}
+/* ===== v0.18.1: reconstruccion ARITMETICA de lineas, filas de pago fusionadas y «posibles articulos» =====
+   Todo es PROPUESTA: las lineas reconstruidas solo se aceptan si su suma es EXACTAMENTE el total ya determinado (y nunca dan nivel «completo»);
+   los «posibles articulos» son solo nombres, sin importe, y nunca se rellenan solos. */
+const FUSED=/^(CAMBIO|ENTREGADO|ENTREGA|PAGO|EFECTIVO|TARJETA|SUBTOTAL|TOTAL|SUMA|CANTIDAD|IMPORTE|IVA|BASE|FORMADEPAGO|DEPAGO|LICITACION|NUMERO|ARTICULOS)+$/;
+const fusedLabel=s=>{const t=norm(s).replace(/[^A-Z]/g,'');return t.length>0&&FUSED.test(t);};
+function itemZone(L){let h=-1;for(let i=0;i<L.length;i++){if(/DESCRIPCI|P\.? ?UNIT|\bCAN\b.*\bPRE\b|ARTICULOS/.test(L[i].u)){h=i;break;}}if(h<0)return null;let e=L.length;for(let i=h+1;i<L.length;i++){if(/\b(TOTAL|SUBTOTAL|SUMA|CANTIDAD)\b|SUBTOTAL/.test(L[i].u)){e=i;break;}}return {h,e};}
+function zoneRow(l){const am=amounts(l.text);let rest=l.text;for(const a of [...am].sort((x,y)=>y.start-x.start))rest=rest.slice(0,a.start)+' '+rest.slice(a.end);
+ rest=rest.replace(/[^\x20-\x7EÁÉÍÓÚÜÑáéíóúüñ]/g,' ');let qty=null;const m=/^\s*(\d{1,3})\s+(?=[A-Za-zÁ-ú])/.exec(rest);if(m){qty=Number(m[1]);rest=rest.slice(m[0].length);}
+ const hasX=/(^|\s)[xX*](\s|$)/.test(rest);rest=rest.replace(/(^|\s)[xX*](?=\s|$)/g,' ');rest=rest.replace(/^\s*\d{5,}\s+/,'');if(hasX)rest=rest.replace(/\s+(4|10|21)\s*$/,' ');
+ return {name:cleanName(rest.replace(/\s{2,}/g,' ')),qty,hasX,am:am.map(a=>a.cents),l};}
+function altLines(L){const z=itemZone(L);if(!z)return null;const rows=[];for(let i=z.h;i<z.e;i++){const r=zoneRow(L[i]);r.isHeader=i===z.h;rows.push(r);}
+ const orphans=[],its=[],noAmt=[];
+ for(const r of rows){if(r.isHeader){orphans.push(...r.am);continue;}if(!r.name||!nameOk(r.name,r.l.conf)||fusedLabel(r.name))continue;const a=r.am;let it=null,why='';
+  if((r.hasX||r.qty===null)&&a.length===2){const [u,s]=a;if(u>0&&s%u===0){it={q:s/u,u,s};why='cantidad deducida: importe ÷ precio';}else return null;}
+  else if(r.qty!==null){if(a.length===0){noAmt.push(r);continue;}
+   if(a.length===1){if(r.qty===1)it={q:1,u:a[0],s:a[0]};else{it={q:r.qty,u:a[0],s:r.qty*a[0],derived:true};why='importe = cantidad × precio';}}
+   else if(a.length===2){const [x,y]=a;if(r.qty*x===y)it={q:r.qty,u:x,s:y};else if(r.qty===1){it={q:1,u:x,s:x};orphans.push(y);}else return null;}
+   else return null;}
+  else if(a.length===0){noAmt.push(r);continue;}
+  else return null;
+  its.push({r,it,why});}
+ for(const x of its)if(x.it.derived){const k=orphans.indexOf(x.it.s);if(k>=0)orphans.splice(k,1);}
+ if(noAmt.length===0){if(orphans.length)return null;}
+ else if(noAmt.length===1&&orphans.length===1){const r=noAmt[0];its.push({r,it:{q:1,u:orphans[0],s:orphans[0]},why:'importe emparejado por eliminación (único artículo y único importe sin asignar)'});orphans.length=0;}
+ else return null;
+ const mk=x=>({name:x.r.name,nameKnown:true,conf:x.r.l.conf,raw:x.r.name,qty:x.it.q,unitCents:x.it.u,subtotalCents:x.it.s,kind:'item',doubts:['reconstruido por aritmética: la suma de las líneas es exactamente el total'+(x.why?' ('+x.why+')':'')+'; revísalo']});
+ return its.sort((p,q)=>p.r.l.i-q.r.l.i).map(mk);}
+function hintsFrom(L){const z=itemZone(L);if(!z)return [];const out=[];for(let i=z.h+1;i<z.e;i++){const r=zoneRow(L[i]);if(!r.am.length||r.am.length>2)continue;const n=r.name;if(!n||fusedLabel(n)||!nameOk(n,L[i].conf)||(n.match(/[A-Za-zÁ-ú]/g)||[]).length<6)continue;if(/\b(IVA|BASE|NETO|BRUTO|CUOTA|PAGO|PAGAR|EFECTIVO|TARJETA|CAMBIO|ENTREGA\w*|SUBTOTAL|TOTAL)\b|ENTREGADO|CAJA|NUMERO|OPERACION/.test(L[i].u)||/\d{5,}/.test(n))continue;out.push(n);}return [...new Set(out)].slice(0,30);}
+const WEIGHT=/(\d+[.,]\d{1,3})\s*KGS?\b/,UNITKG=new RegExp('(?<![\\d.,])(\\d{1,3}(?:\\.\\d{3})+|\\d{1,6})[.,](\\d{2})\\s*(?:€|EUR)?\\s*/\\s*KGS?','');
+const QTYX=new RegExp('(\\d+(?:[.,]\\d{1,3})?)\\s*[xX*]\\s*(?<![\\d.,])(\\d{1,3}(?:\\.\\d{3})+|\\d{1,6})[.,](\\d{2})(?!\\d)');
+const toQty=s=>Number(String(s).replace(',','.'));
+/* v0.16 candidata: RECONOCIMIENTO UNIVERSAL DE COMERCIOS. El nombre sale del TEXTO del ticket (cabecera, pie legal, web, CIF/NIF); CIFS y CHAINS son solo pistas, no un catalogo cerrado.
+   Denominacion comercial y razon social se distinguen (no se asume que coinciden). PROBABLE solo si dos fuentes independientes coinciden (o es una cadena/CIF conocidos); si no, DUDOSA: se propone para confirmar. Sin evidencia no se devuelve nada: nunca se inventa un establecimiento. */
+export const normName=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim();
+const RE_ADDR=/\b(C\/|CALLE|AVDA|AV|AVENIDA|PLAZA|PZA|PASEO|PSO|CTRA|CARRETERA|POL|POLIGONO|CENTRO COMERCIAL|PARQUE|URB|URBANIZACION|KM|MODULOS?|NUMERO|LOCAL|PLANTA|ESCALERA)\b|\bC\.?\s?C\.?(\s|$)/;
+const CIF_RE=/\b(?:ES)?([ABCDEFGHJNPQRSUVW])[\s\-.]?(\d{7})[\s\-.]?([0-9A-J])\b/,NIF_RE=/\b(\d{8})[\s\-.]?([A-Z])\b/;
+const LEGAL_END=/[\s,]+(S\.?\s?L\.?\s?U?|S\.?\s?A\.?\s?U?|S\.?\s?COOP\.?|S\.?\s?C\.?|C\.?\s?B\.?)\s*\.?\s*$/i,LEGAL_LBL=/(RAZON SOCIAL|TITULAR|EMPRESA|DENOMINACION SOCIAL)\s*[:\-]?\s*(.+)$/i;
+const GENERIC=new Set(['SUPERMERCADO','SUPERMERCADOS','TIENDA','TIENDAS','COMERCIAL','DISTRIBUCION','DISTRIBUCIONES','ESPANA','SPAIN','IBERIA','SERVICIOS','GRUPO','SOCIEDAD','ANONIMA','LIMITADA','UNIPERSONAL','RETAIL','HOLDING','DE','LA','EL','LOS','LAS','Y','DEL','SL','SA','SLU','SAU']);
+/* Palabras y expresiones que NUNCA son un establecimiento: pagos, efectivo, tarjetas, cambio, cajas, totales, impuestos, tablas, horarios, cabeceras de ticket, direcciones, productos de servicio. Una cabecera real no las contiene. */
+const NOT_SHOP=/\b(PAGO|PAGADO|PAGAR|EFECTIVO|CAMBIO|CAMBIOS|ENTREGAD\w*|TARJETA|TARJ|VISA|MASTERCARD|CONTACTLESS|BIZUM|CAJA|CAJERO|SUBTOTAL|TOTAL|IVA|BASE|IMPONIBLE|CUOTA|NETO|BRUTO|EXCL|INCL|CANTIDAD|ARTICULOS?|DETALLES?|FORMA|NUMERO|DESCRIPCION|PRECIO|UNIT|IMPORTE|IMP|HORARIO|APERTURA|ABIERTO|CERRADO|LUNES|MARTES|MIERCOLES|JUEVES|VIERNES|SABADO|DOMINGO|GRACIAS|VISITA|BIENVENID\w*|OPERACION|VENTA|CONTADO|TICKET|FACTURA|SIMPLIFICADA|DOCUMENTO|FECHA|HORA|TELEFONO|TEL|TLF|EMAIL|WWW|HTTP\w*|DEVOLUCION\w*|GARANTIA|PUNTOS|CLUB|CLIENTE|DESCUENTO|OFERTA|AHORRO|INFORMACION|COMPRA|REF|AUT|AID|MID|TID|PAN|ARC|ID|SERIE|PEDIDO|ENTRADA|LICITACION)\b|\b(LU|MA|MI|JU|VI|SA|DO)\s*[-–]\s*(LU|MA|MI|JU|VI|SA|DO)\b/;
+const CHAIN_NAMES=['MERCADONA','CARREFOUR','ALCAMPO','EROSKI','AHORRAMAS','CAPRABO','HIPERCOR','BONPREU','CONSUM','GADIS','LIDL','ALDI','DIA'];
+const CIF_DIGITS=[['LIDL','60195278'],['CARREFOUR','28425270'],['MERCADONA','46103834']];
+const tokensOf=s=>normName(s).split(' ').filter(w=>w.length>=3&&!GENERIC.has(w));
+/* Texto de un candidato: se corta en el primer hueco grande (columna distinta), se quitan simbolos de ruido y los restos de sufijo legal o letras sueltas al final. */
+function cleanShop(raw){let x=String(raw||'').split(/\s{3,}/)[0];x=x.replace(/[¿?¡!»«"'`´|_~=*#<>(){}\[\]:;]/g,' ').replace(/\s+/g,' ').trim();if(/,/.test(x))return '';
+ let w=x.split(' ').filter(Boolean);const SUF=new Set(['S','L','A','U','SL','SA','SLU','SAU','SC','CB','COOP','S.L','S.A','S.L.U','S.A.U','S.L.','S.A.','S.L.U.','S.A.U.']);
+ while(w.length>1&&(SUF.has(w[w.length-1].toUpperCase())||(w[w.length-1].replace(/[.\-]/g,'').length<=2&&!/^\d+$/.test(w[w.length-1]))))w.pop();
+ x=w.join(' ').replace(/[.\-]+$/,'').trim();const letters=(x.match(/[A-Za-zÀ-ÿ]/g)||[]).length;if(x.length<3||x.length>45||letters<3||letters/x.replace(/\s/g,'').length<0.85||/\d/.test(x))return '';return x;}
+const LONGBAD=/ARTICULO|CANTIDAD|SUBTOTAL|EFECTIVO|DESCR|PREDESC|ENTREGAD|TARJETA|IMPONIBLE|FACTURA|SIMPLIFICADA|DOCUMENTO|TELEFONO|HORARIO|APERTURA|GRACIAS|BIENVENID|TOTAL/;
+const looksName=(l,minConf)=>{const x=cleanShop(l.text);if(!x)return '';const u=normName(x);if(!u||NOT_SHOP.test(u)||LONGBAD.test(u.replace(/ /g,''))||RE_NOISE.test(l.u)||LABELISH.test(l.u)||RE_ADDR.test(u))return '';if(l.conf!==undefined&&l.conf<minConf)return '';return x;};
+const lev=(a,b)=>{const m=a.length,n=b.length;if(!m)return n;if(!n)return m;let p=Array.from({length:n+1},(_,j)=>j);for(let i=1;i<=m;i++){const c=[i];for(let j=1;j<=n;j++)c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=c;}return p[n];};
+/* coincidencia difusa con una cadena conocida dentro de la cabecera (lectura imprecisa: «MERC¿ADONÁA»): ventana de letras con distancia <=1 (<=2 si el nombre es largo); nombres cortos solo exactos */
+function fuzzyChain(u){const s=u.replace(/[^A-Z]/g,'');for(const nm of CHAIN_NAMES){if(nm.length<7){if(new RegExp('(^| )'+nm+'( |$)').test(u))return nm;continue;}const tol=nm.length>=9?2:1;for(let L2=nm.length-1;L2<=nm.length+1;L2++)for(let k=0;k+L2<=s.length;k++)if(lev(s.slice(k,k+L2),nm)<=tol)return nm;}return '';}
+export function detectShop(L){
+ const out={value:'',conf:'NINGUNA',source:'',legal:'',cif:'',candidates:[]};
+ // zona de cabecera: hasta la primera linea con importes o con cabecera de tabla (maximo 10 lineas, minimo 3)
+ let hz=L.length;for(let k=1;k<L.length;k++){if(/\d[.,]\d{2}\b/.test(L[k].text)||/\b(DESCRIPCION|ARTICULOS?|CANT|PRECIO)\b|DESCR|CAN\s*PRE|P\.?\s?UNIT/.test(L[k].u)){hz=k;break;}}
+ const hn=Math.min(10,Math.max(3,hz,Math.min(3,L.length))),fn=Math.min(16,Math.max(3,Math.ceil(L.length/2))),head=L.slice(0,Math.min(hn,Math.max(3,Math.ceil(L.length*0.6)))),foot=L.slice(-fn),zone=[...new Set([...L.slice(0,40),...foot])],legalIdx=new Set();
+ // 1) pistas conocidas: CIF (completo o 7 cifras seguidas) y cadenas (exactas o difusas): PROBABLES
+ for(const l of L.slice(0,40)){const c=l.u.replace(/[\s\-.:]/g,'');for(const [nm,re] of CIFS)if(re.test(c)){out.value=nm;out.conf='PROBABLE';out.source='CIF conocido';break;}if(out.value)break;}
+ let partialCif='';if(!out.value)for(const l of zone){const c=l.u.replace(/[^0-9]/g,'');for(const [nm,dg] of CIF_DIGITS){for(let k=0;k+7<=dg.length;k++)if(c.includes(dg.slice(k,k+7))){partialCif=nm;break;}if(partialCif)break;}if(partialCif)break;}
+ if(!out.value)for(const l of head.slice(0,12)){for(const [nm,re] of CHAINS)if(re.test(l.u)){out.value=nm;out.conf='PROBABLE';out.source='cabecera (cadena conocida)';break;}if(out.value)break;}
+ if(!out.value)for(const l of head){const fz=fuzzyChain(normName(l.text));if(fz){out.value=fz;out.conf=partialCif===fz?'PROBABLE':'DUDOSA';out.source='cabecera (parecido a '+fz+(partialCif===fz?', CIF parcial coincide':', lectura imprecisa')+')';break;}}
+ // 2) CIF/NIF y razon social leidos (informativos)
+ for(const l of zone){const up=l.text.toUpperCase();const m=CIF_RE.exec(up)||(/\b(CIF|NIF|N\.?I\.?F)\b/.test(up)?NIF_RE.exec(up):null);if(m){out.cif=(m[1]+m[2]+(m[3]||'')).replace(/\s/g,'');break;}}
+ const legalNames=[],legalLine=new Map();for(const l of zone){const lab=LEGAL_LBL.exec(l.text);let nm='';if(lab)nm=cleanName(lab[2]);else if(LEGAL_END.test(l.text.trim())&&looksName({...l,text:l.text.replace(LEGAL_END,'')},50))nm=cleanName(l.text);if(nm){legalIdx.add(l.i);if(!legalNames.includes(nm)){legalNames.push(nm);legalLine.set(nm,l.i);}}}
+ if(legalNames.length)out.legal=legalNames[0];
+ // 3) candidatos de TEXTO: cabecera, web y razon social (sin lista cerrada)
+ const headLegal=new Set(),cands=new Map();const add=(name,src)=>{const toks=tokensOf(name);if(!toks.length)return;const key=toks[0];let e=cands.get(key);if(!e){e={name,toks,src:new Set()};cands.set(key,e);}e.src.add(src);};
+ for(const l of head){if(legalIdx.has(l.i)){const x=looksName({...l,text:l.text.replace(LEGAL_END,'')},50);if(x&&l.i<Math.min(4,hn)){add(x,'cabecera (razon social)');headLegal.add(l.i);}continue;}const x=looksName(l,55);if(x)add(x,'cabecera');}
+ for(const l of zone){for(const tok of l.text.split(/\s+/)){const m=/^(?:www\.|https?:\/\/)?([A-Za-z0-9][A-Za-z0-9\-]{2,})\.(?:es|com|net|eu|cat|org)\b/i.exec(tok.replace(/[,;:)]+$/,''));if(m&&!/^(gmail|hotmail|outlook|yahoo)$/i.test(m[1])&&!NOT_SHOP.test(normName(m[1])))add(m[1].toUpperCase(),'web');}}
+ for(const n of legalNames){if(headLegal.has(legalLine.get(n)))continue;const base=cleanName(n.replace(LEGAL_END,'')).replace(/[,.]+$/,'');if(!base)continue;const short=base.split(/\s+/).filter(w=>!GENERIC.has(normName(w))).join(' ');if(short&&normName(short)!==normName(base))add(short,'razon social');add(base,'razon social');}
+ // 4) cruce: una fuente = DUDOSA; dos fuentes distintas que coinciden = PROBABLE
+ const list=[...cands.values()];for(const a of list)for(const b of list){if(a===b)continue;if(a.toks.some(t=>t.length>=4&&b.toks.includes(t))){for(const s of b.src)a.src.add(s);}}
+ const ranked=list.map(e=>({name:e.name,sources:[...e.src],n:e.src.size})).sort((x,y)=>y.n-x.n||(y.sources.some(s=>/^cabecera/.test(s))-x.sources.some(s=>/^cabecera/.test(s))));
+ out.candidates=ranked.slice(0,4).map(c=>({name:c.name,sources:c.sources}));
+ if(!out.value&&ranked.length){const top=ranked[0];out.value=top.name;out.conf=top.n>=2?'PROBABLE':'DUDOSA';out.source=top.sources.join(' + ');}
+ else if(out.value){out.candidates=out.candidates.filter(c=>lev(normName(c.name).replace(/ /g,''),out.value.replace(/ /g,''))>3);out.candidates.unshift({name:out.value,sources:[out.source]});}
+ return out;}
+/* Historial (nombres ya confirmados) y CIF recordados: solo ajusta la GRAFIA de un candidato muy parecido; nunca cambia a otro comercio ni sube un candidato dudoso a probable salvo igualdad exacta. */
+
+export function applyHistory(shop,history=[],cifMap={}){
+ const s={...shop};if(s.cif&&cifMap&&cifMap[s.cif]&&s.conf!=='PROBABLE'){return {...s,value:cifMap[s.cif],conf:'PROBABLE',source:'historial (CIF)'};}
+ const k=normName(s.value);if(!k||!history.length)return s;
+ for(const h of history){if(normName(h)===k){return {...s,value:h,conf:s.conf==='NINGUNA'?'DUDOSA':(s.conf==='DUDOSA'?'PROBABLE':s.conf),source:(s.source?s.source+' + ':'')+'historial'};}}
+ if(s.conf!=='PROBABLE'&&k.length>=5)for(const h of history){const hk=normName(h);if(hk.length>=5&&hk[0]===k[0]&&1-lev(k,hk)/Math.max(k.length,hk.length)>=0.86){return {...s,value:h,conf:'DUDOSA',source:(s.source?s.source+' + ':'')+'parecido a «'+h+'» del historial'};}}
+ return s;}
+/* v0.18 candidata: reconstruye FILAS a partir de cajas de texto con coordenadas (salida de un OCR por cajas, p. ej. PaddleOCR). Independiente del motor: recibe [{text,score,poly:[[x,y],...]}] y devuelve [{text,conf,y,h,x0,x1}].
+   Agrupa por centro vertical (tolerancia relativa a la altura mediana de la fila) y separa columnas con tres espacios, igual que el lector actual. */
+export function rowsFromBoxes(items){const bs=(items||[]).filter(i=>i&&i.text&&String(i.text).trim()&&Array.isArray(i.poly)&&i.poly.length).map(i=>{const xs=i.poly.map(p=>Array.isArray(p)?p[0]:p.x),ys=i.poly.map(p=>Array.isArray(p)?p[1]:p.y);return {s:String(i.text).trim(),x0:Math.min(...xs),x1:Math.max(...xs),y0:Math.min(...ys),y1:Math.max(...ys),c:Math.round((i.score||0)*100)};}).sort((a,b)=>(a.y0+a.y1)-(b.y0+b.y1));
+ const rows=[],med=a=>{const s=[...a].sort((x,y)=>x-y);return s[s.length>>1];};
+ for(const b of bs){const yc=(b.y0+b.y1)/2,h=Math.max(6,b.y1-b.y0);let best=null,bd=1e9;for(const r of rows){const d=Math.abs(yc-r.yc);if(d<=0.42*r.h&&d<bd){best=r;bd=d;}}if(best){best.w.push(b);best.yc=med(best.w.map(x=>(x.y0+x.y1)/2));best.h=Math.max(6,med(best.w.map(x=>x.y1-x.y0)));}else rows.push({yc,h,w:[b]});}
+ rows.sort((a,b)=>a.yc-b.yc);return rows.map(r=>{r.w.sort((a,b)=>a.x0-b.x0);let text='',end=null;for(const w of r.w){if(end!==null){const g=w.x0-end;text+=g>r.h*2.2?'   ':g>r.h*0.12?' ':'';}text+=w.s;end=w.x1;}return {text,conf:Math.round(r.w.reduce((a,x)=>a+x.c,0)/r.w.length),y:Math.round(r.yc),h:Math.round(r.h),x0:Math.min(...r.w.map(x=>x.x0)),x1:Math.max(...r.w.map(x=>x.x1))};});}
+export function parseReceipt(input,{today}={}){
+ const L=prep(input),res={items:[],discounts:[],tax:[],totals:[],tendered:[],change:[],card:[],savings:[],advantages:[],doubts:[],shop:{value:'',conf:'NINGUNA'},date:{value:'',conf:'NINGUNA'}};
+ const items=[];let pending=null,lastItem=null;const queue=[],taxSums=[],taxRows=[];let unresolved=0,inTax=false;const seq=[],subs=[],pays=[];
+ const assign=(kind,a,l)=>{if(kind==='total'){res.totals.push({cents:a.cents,fixed:l.fixed,numConf:l.numConf,line:l.i,label:l.label||''});unresolved--;}else if(kind==='change')res.change.push(a.cents);else if(kind==='tend')res.tendered.push(a.cents);else if(kind==='card')res.card.push(a.cents);else res.savings.push(a.cents);};
+ const addDoubt=(field,reason)=>res.doubts.push({field,reason});
+ for(let k=0;k<L.length;k++){const l=L[k],u=l.u;if(!u){continue;}const am=amounts(l.text).filter(a=>!(a.neg&&false));
+  const lastAm=am.at(-1);
+  /* v0.17: ZONA DE IVA. Una cabecera de tabla de impuestos (IVA/BASE/CUOTA/NETO/BRUTO) vacia la cola de importes pendientes y abre una zona en la que ninguna fila «TOTAL» es candidata a total
+     (es el total del desglose de IVA). Se cierra en la primera linea con texto ajeno a la tabla. Evita tomar un importe de IVA como total o como pago con tarjeta. */
+  if(inTax){const rest=u.replace(/TOTAL|IMPONIBLE|CUOTA|BRUTO|NETO|EXCL|INCL|BASE|IVA|DETALLES|DE/g,'');if(!(/\d/.test(u)&&!/[A-Z]{5,}/.test(rest)))inTax=false;}
+  if(!am.length&&/(\bIVA\b.*(BASE|CUOTA|NETO|BRUTO|EXCL|INCL)|(BASE|NETO|BRUTO).*(\bIVA\b|CUOTA)|DETALLES? DE IVA|\bBASE IMPON|\bIMPONIBLE\b|\bCUOTA\s*\()/.test(u)){queue.length=0;pending=null;inTax=true;continue;}
+  if(inTax&&RE_TOTAL.test(u)&&!/TOTAL A PAGAR|IMPORTE TOTAL/.test(u)){for(const a of am)res.tax.push(a.cents);continue;}
+  if(!inTax&&lastAm&&!/\d\s*[xX]\s*\d/.test(u)&&!/\/\s*KG/.test(u))seq.push(lastAm.cents);
+  if(!inTax&&am.length){if(/\bSUBTOTAL\b/.test(u))for(const a of am)subs.push(a.cents);else if(/\bPAGO\b.*(EFECTIVO|TARJETA|CONTADO|METALICO)/.test(u))for(const a of am)pays.push(a.cents);}
+  const onlyAmt=am.length>0&&/^[\s€EUR\d.,\-]*$/.test(u);
+  if(onlyAmt&&queue.length){for(const a of am){const q=queue.shift();if(!q)break;assign(q.kind,a,{...l,label:q.label});}continue;}
+  // peso en linea propia (Mercadona): "0,865 kg 1,99 EUR/kg 1,72" -> completa el articulo anterior sin importe
+  const wm=WEIGHT.exec(u),uk=UNITKG.exec(u);
+  const wbase=wm&&uk?(pending||(cleanName(l.text.slice(0,wm.index))?{name:cleanName(l.text.slice(0,wm.index)).replace(/^\d{1,3}\s+(?=\D)/,''),conf:l.conf,fixed:l.fixed}:null)):null;
+  if(wbase){const qty=toQty(wm[1]),unit=Number(uk[1].replace(/\./g,''))*100+Number(uk[2]);const imp=am.filter(a=>!/^\s*(€|EUR)?\s*\/\s*KG/.test(u.slice(a.end))).at(-1);
+   if(imp){pushItem(wbase.name,wbase.conf,l.numConf,imp.cents,qty,unit,l.fixed||wbase.fixed,'peso');pending=null;continue;}}
+  {const qd=/^\s*(\d+(?:[.,]\d{1,3})?)\s*X\s*\d/.exec(u);if(qd&&am.length===2&&!/[A-Z]{2}/.test(u.slice(qd[0].length-1).replace(/EUR/g,''))){const q=toQty(qd[1]),unit=am[0].cents,imp=am[1].cents;
+   if(pending){pushItem(pending.name,pending.conf,l.numConf,imp,q,unit,pending.fixed||l.fixed,'normal');pending=null;continue;}
+   if(lastItem&&Math.round(q*unit)===lastItem.subtotalCents){lastItem.qty=q;lastItem.unitCents=unit;lastItem.doubts=lastItem.doubts.filter(d=>!/cantidad/.test(d));continue;}}}
+  if(wm&&uk&&!wbase&&lastItem){const q=toQty(wm[1]),unit=Number(uk[1].replace(/\./g,''))*100+Number(uk[2]);if(Math.abs(Math.round(q*unit/1)-lastItem.subtotalCents)<=1){lastItem.qty=q;lastItem.unitCents=unit;lastItem.doubts=lastItem.doubts.filter(d=>!/cantidad|peso/.test(d));}else lastItem.doubts.push('peso × precio/kg no cuadra con el importe');continue;}
+  // linea de continuacion "2 x 1,20" tras un articulo con importe
+  const cont=/^\s*(\d+)\s*[xX]\s*\d/.test(u)&&!/[A-Z]{3}/.test(u.replace(/X/g,''))&&lastItem;
+  if(cont&&am.length===1&&lastItem){const q=toQty(/^\s*(\d+(?:[.,]\d+)?)/.exec(u)[1]);const unit=am[0].cents;if(Math.round(q*unit)===lastItem.subtotalCents){lastItem.qty=q;lastItem.unitCents=unit;lastItem.doubts=lastItem.doubts.filter(d=>!/cantidad/.test(d));}else lastItem.doubts.push('la cantidad × precio de la línea siguiente no cuadra con el importe');continue;}
+  // resumenes y clases por palabra clave
+  const lab=l.text.replace(/[\d.,€\-:]+/g,' ').replace(/\s+/g,' ').trim().slice(0,32);
+  const qpush=kind=>{queue.push({kind,label:lab});if(kind==='total')unresolved++;};
+  if(/VENTAJ|ACUMUL|SALDO/.test(u)&&lastAm){res.advantages.push({label:lab,cents:lastAm.cents});if(RE_TOTAL.test(u))res.savings.push(lastAm.cents);continue;}
+  if(RE_SAV_SUM.test(u)||(RE_TOTAL.test(u)&&RE_SAV_WORD.test(u))){if(lastAm)res.savings.push(lastAm.cents);else qpush('sav');continue;}
+  if(RE_TOTAL.test(u)&&RE_NOT_TOTAL_ANY.test(u)&&!/TOTAL A PAGAR|IMPORTE TOTAL/.test(u)){if(RE_CHANGE.test(u)&&RE_TEND.test(u)&&am.length===1){continue;/* v0.18: «CambioEntregado 10,00» (dos etiquetas pegadas, un solo importe): ambiguo, no se asigna */}if(RE_CHANGE.test(u)){if(lastAm)res.change.push(lastAm.cents);else qpush('change');}else if(RE_TEND.test(u)){if(lastAm)res.tendered.push(lastAm.cents);else qpush('tend');}else if(!lastAm)qpush('sav');continue;}
+  if(/^\s*[1I|L]P\b[\s.:;,]*\d/.test(u)&&/EUR|€/.test(u)&&lastAm&&L.slice(Math.max(0,k-10),k).some(p=>RE_CARD_CTX.test(p.u))){res.card.push(lastAm.cents);continue;}
+  if(/^\s*(IMP|IMPORTE)\b[\s.:;,]*\d/.test(u)&&/EUR|€/.test(u)&&lastAm&&(/^\s*IMP\b/.test(u)||L.slice(Math.max(0,k-10),k).some(p=>RE_CARD_CTX.test(p.u)))){res.card.push(lastAm.cents);continue;}
+  if(/^\s*VENTA\b[\s€EUR\d.,\-]*$/.test(u)&&lastAm&&queue.length===0){res.card.push(lastAm.cents);continue;}
+  if(/^\s*SUMA\b/.test(u)&&am.length>=2){const c=am.at(-1).cents,ab=am.slice(-3,-1);taxSums.push({cents:c,ok:ab.length===2&&ab[0].cents+ab[1].cents===c});continue;}
+  if(am.length===3&&/^\s*\d{1,2}[.,]\d{2}\s*%/.test(u)){const [r,b,q]=am;if(Math.abs(Math.round(b.cents*r.cents/10000)-q.cents)<=2){taxRows.push(b.cents+q.cents);res.tax.push(b.cents,q.cents);continue;}}
+  if(am.length>=3&&/\d\s*%/.test(u)){const [a,b,c]=am.slice(-3);if(a.cents+b.cents===c.cents){taxRows.push(c.cents);for(const x of am)res.tax.push(x.cents);continue;}}
+  if(RE_TOTAL.test(u)&&!RE_TOTAL_NOT.test(u)){if(lastAm)res.totals.push({cents:lastAm.cents,fixed:l.fixed,numConf:l.numConf,line:l.i,label:lab});else qpush('total');continue;}
+  if(RE_CHANGE.test(u)&&RE_TEND.test(u)&&am.length===1)continue;
+  if(RE_CHANGE.test(u)){if(lastAm)res.change.push(lastAm.cents);else qpush('change');continue;}
+  if(RE_TEND.test(u)){if(lastAm)res.tendered.push(lastAm.cents);else qpush('tend');continue;}
+  if(RE_CARD.test(u)){if(lastAm)res.card.push(lastAm.cents);else qpush('card');continue;}
+  if(RE_TAX.test(u)){for(const a of am)res.tax.push(a.cents);continue;}
+  if(!am.length){queue.length=0; // posible nombre de articulo cuyo importe viene en la linea siguiente (peso)
+   if(!RE_NOISE.test(u)&&/[A-Z]{3}/.test(u))pending={name:cleanName(l.text.replace(/^\d{1,3}\s+(?=\D)/,'')),conf:l.conf,fixed:l.fixed};else pending=null;continue;}
+  // descuentos: palabra clave o importe negativo
+  queue.length=0;const neg=am.at(-1).neg;
+  if(RE_DISC.test(u)||neg){const a=am.at(-1);const nm=cleanName(l.text.slice(0,am[0].start))||'Descuento';res.discounts.push({name:nm,cents:a.cents,fixed:l.fixed,numConf:l.numConf,doubts:neg&&!RE_DISC.test(u)?['importe negativo sin la palabra descuento']:[]});pending=null;continue;}
+  if(RE_NOISE.test(u)){pending=null;continue;}
+  // articulo normal: el ultimo importe de la linea es el importe de la linea; el penultimo (si hay) el precio unitario
+  if(l.text.slice(am.at(-1).end).replace(/^\s*(€|EUR)?\s*[1-4]\s*$/i,'').replace(/[€A-Z\s]|EUR/gi,'').length>0){pending=null;continue;}
+  const imp=am.at(-1),unitA=am.length>=2?am.at(-2):null;let head=l.text.slice(0,(unitA||imp).start),qty=1,unit=null,qm=null;
+  const q2=QTYX.exec(head);
+  if(q2){qty=toQty(q2[1]);unit=Number(q2[2].replace(/\./g,''))*100+Number(q2[3]);head=head.slice(0,q2.index)+head.slice(q2.index+q2[0].length);}
+  else{qm=/^(\d{1,3})\s+(?=\D)/.exec(head);if(qm){qty=Number(qm[1]);head=head.slice(qm[0].length);}if(unitA)unit=unitA.cents;}
+  const name=cleanName(head);if(!/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]{2}/.test(name)){pending=null;continue;}
+  pushItem(name,l.conf,l.numConf,imp.cents,qty,unit,l.fixed,qm&&!unit&&qty>1?'qtysola':'normal');pending=null;}
+ function pushItem(name,conf,numConf,imp,qty,unit,fixed,mode){const doubts=[];let q=qty,u=unit;
+  if(mode==='peso'){if(Math.round(qty*unit)===imp){q=qty;u=unit;}else{doubts.push('peso × precio/kg no cuadra con el importe (se usa el importe del ticket, cantidad 1)');q=1;u=imp;}}
+  else if(u!==null){if(Math.round(q*u)!==imp){doubts.push('cantidad × precio unitario ('+q+' × '+fmt(u)+') no cuadra con el importe '+fmt(imp)+' (se usa el importe del ticket, cantidad 1)');q=1;u=imp;}}
+  else{if(mode==='qtysola'){doubts.push('cantidad no clara: el ticket muestra '+qty+' pero un solo importe (se usa cantidad 1 al importe indicado)');}q=1;u=imp;}
+  if(fixed)doubts.push('algún importe tenía caracteres confundidos por el OCR y se corrigió: compruébalo');
+  if(numConf<NUM_MIN_CONF)doubts.push('importe leído con poca seguridad');
+  const ok=nameOk(name,conf);const it={name:ok?name:NAME_UNKNOWN,nameKnown:ok,conf,raw:name,qty:q,unitCents:u,subtotalCents:imp,kind:'item',doubts};if(!ok)it.doubts.push('nombre ilegible: no se inventa');items.push(it);lastItem=it;}
+ const taxGross=taxSums.length?(taxSums.every(s=>s.ok)||taxSums.some(s=>s.ok)?taxSums.filter(s=>s.ok).at(-1).cents:null):(taxRows.length?taxRows.reduce((a,b)=>a+b,0):null);
+ if(unresolved>0)addDoubt('total','Línea de TOTAL sin importe legible.');
+ /* v0.18: CUADRE ARITMETICO (calculado antes de depurar articulos): >=3 importes consecutivos de la columna que suman exactamente el siguiente. */
+ let cuadreM=0,cuadreV=0;for(let i=0;i<seq.length;i++){let s=0;for(let m=0;i+m<seq.length-1;m++){s+=seq[i+m];if(s>MAX_CENTS)break;if(m>=2&&s===seq[i+m+1]&&m+1>cuadreM){cuadreM=m+1;cuadreV=s;}}}
+ {const pay=new Set([...(cuadreM>=3?[cuadreV]:[]),...res.card,...res.tendered,...res.totals.map(t=>t.cents),...(taxGross?[taxGross]:[])]),n0=items.length;for(let j=items.length-1;j>=0;j--){const it=items[j];if(LABELISH.test(norm(it.raw))||fusedLabel(it.raw)||/\d[.,]\d{2}/.test(it.raw)||(cuadreM>=3&&it.subtotalCents===cuadreV)||(pay.has(it.subtotalCents)&&(!it.nameKnown||(n0===1&&it.conf<85))))items.splice(j,1);}}
+ res.taxGross=taxGross;
+ res.items=items;
+ // ---- fecha y comercio
+ const nowD=today||new Date().toISOString().slice(0,10);
+ {const old=new Date(new Date(nowD).setFullYear(new Date(nowD).getFullYear()-2)).toISOString().slice(0,10),dc=new Map();
+  for(const l of L){if(/CADUC|CONSUM\w* PREF|\bCAD\b|VALID\w* HASTA/.test(l.u))continue;for(const m of l.text.matchAll(/(?<![\d.,])(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4}|\d{2})(?![\d])/g)){const y=m[3].length===2?'20'+m[3]:m[3],d=y+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');if(!validDate(d))continue;const e=dc.get(d)||{n:0,y4:false,conf:0,first:l.i,ok:true};e.n++;if(m[3].length===4)e.y4=true;e.ok=e.ok&&l.conf>=NAME_MIN_CONF&&l.numConf>=NUM_MIN_CONF;dc.set(d,e);}
+   const iso=/(?<!\d)(\d{4})-(\d{2})-(\d{2})(?!\d)/.exec(l.text);if(iso&&validDate(iso[0])){const e=dc.get(iso[0])||{n:0,y4:true,first:l.i,ok:true};e.n++;e.y4=true;dc.set(iso[0],e);}}
+  /* v0.18.1: si no hay ninguna fecha legible, se admite «dd/mm + aaaa» con la segunda barra perdida o leída como «7» por el OCR («19/1172026»); siempre DUDOSA (la persona la confirma). */
+  if(!dc.size)for(const l of L){const m=/(?<![\d.,])(\d{1,2})\/(\d{2})[7/|lI1]?(20\d{2})(?!\d)/.exec(l.text);if(m){const d=m[3]+'-'+m[2]+'-'+m[1].padStart(2,'0');if(validDate(d)){dc.set(d,{n:1,y4:true,conf:0,first:l.i,ok:false});break;}}}
+  const inRange=[...dc].filter(([d])=>d<=nowD&&d>=old),pool=inRange.length?inRange:[...dc];
+  if(pool.length){pool.sort((a,b)=>b[1].n-a[1].n||(b[1].y4-a[1].y4)||a[1].first-b[1].first);const [d,e]=pool[0];res.date.value=d;res.date.conf=e.ok?'PROBABLE':'DUDOSA';
+   if(!inRange.length||d>nowD||d<old){res.date.conf='DUDOSA';addDoubt('date','La fecha leída ('+d.split('-').reverse().join('/')+') es futura o de hace más de dos años.');}
+   else if(inRange.length>1){res.date.conf='DUDOSA';addDoubt('date','Hay fechas distintas en el ticket ('+inRange.map(x=>x[0].split('-').reverse().join('/')).join(' / ')+'): se propone la más repetida; compruébala.');}}}
+ {const d=detectShop(L);res.shop={value:d.value,conf:d.conf,source:d.source,legal:d.legal,cif:d.cif,candidates:d.candidates};}
+ if(!res.shop.value)addDoubt('shop','No se reconoce el comercio.');if(!res.date.value)addDoubt('date','No se reconoce la fecha.');
+ // ---- importes e ingreso total
+ let dsum=res.discounts.reduce((a,d)=>a+d.cents,0),isum=items.reduce((a,i)=>a+i.subtotalCents,0);
+ const recon=T=>{if(!items.length)return {exact:false,variant:'',net:null};if(isum-dsum===T)return {exact:true,variant:res.discounts.length?'líneas − descuentos':'líneas',net:isum-dsum};if(res.discounts.length&&isum===T)return {exact:true,variant:'líneas (los descuentos ya estaban aplicados)',net:isum,discountsIgnored:true};return {exact:false,variant:'',net:isum-dsum};};
+ const sup=new Map();const add=(v,src)=>{if(!(v>0&&v<=MAX_CENTS))return;if(!sup.has(v))sup.set(v,new Set());sup.get(v).add(src);};
+ for(const t of res.totals)add(t.cents,'etiqueta');for(const c of res.card)add(c,'pago con tarjeta');/* v0.18: un unico grupo de IVA suelto (una sola fila de tabla, sin fila SUMA) no es candidato a total: solo corrobora si ya existe uno */if(taxGross)add(taxGross,'desglose de IVA');
+ /* v0.18: CUADRE ARITMETICO. Si >=3 importes consecutivos de la columna de importes suman EXACTAMENTE el importe siguiente, ese importe es candidato a total (independiente de las etiquetas: sirve con columnas desplazadas). */
+ if(cuadreM>=3&&cuadreV>0)add(cuadreV,'cuadre aritmético');
+ /* v0.18: un candidato YA existente se refuerza si su importe se repite en >=2 filas ajenas a la tabla de IVA (p. ej. «A PAGAR 28,70», «28,70 EUR», «…28,70 €»); y SubTotal + PAGO con el mismo importe aportan dos fuentes. */
+ {const rep=v=>L.filter(l=>!/\b(IVA|BASE|NETO|BRUTO|CUOTA)\b/.test(l.u)&&amounts(l.text).some(a=>a.cents===v)).length;if(sup.size>1)for(const [v,s] of sup)if(s.size===1&&s.has('etiqueta')&&rep(v)>=3)s.add('importe repetido');/* solo desempata entre candidatos rivales; nunca infla un total ya corroborado */const sp=subs.find(v=>v>0&&pays.includes(v));if(sp){add(sp,'subtotal');add(sp,'pago');}}
+ const tendered=res.tendered.at(-1),change=res.change.at(-1)??0;if(tendered!==undefined&&res.change.length)add(tendered-change,'entregado − cambio');else if(tendered!==undefined&&res.totals.length&&tendered===res.totals.at(-1).cents)add(tendered,'pago exacto');
+ // la suma de lineas solo SUMA apoyo a un candidato que ya existe (nunca crea uno ni cuenta como conflicto si no coincide)
+ if(items.length>=2||(items.length===1&&items[0].nameKnown&&items[0].conf>=85&&!items[0].doubts.length))for(const [v,s] of sup)if(recon(v).exact)s.add('suma de líneas');
+ const cand=[...sup].map(([v,s])=>({cents:v,sources:[...s],labels:[...new Set(res.totals.filter(t=>t.cents===v&&t.label).map(t=>t.label))]})).sort((a,b)=>b.sources.length-a.sources.length);
+ let total=null,tconf='NINGUNA',conflict=false;
+ if(cand.length){const best=cand[0],second=cand[1];
+  if(second&&second.sources.length>=best.sources.length){conflict=true;tconf='DUDOSA';addDoubt('total','Hay importes distintos candidatos a total ('+cand.map(c=>fmt(c.cents)+' €').join(' / ')+'): no se elige ninguno por ti.');}
+  else{total=best.cents;if(second){conflict=true;addDoubt('total','Hay otro importe distinto del total ('+fmt(second.cents)+' €) en el ticket: confirma el total.');}
+   const strong=best.sources.length>=2&&!second;tconf=strong?'VERIFICADA':'PROBABLE';
+   // un total con UNA sola fuente y leido con poca seguridad (o con caracteres corregidos) no se propone: queda solo como candidato
+   const lt=res.totals.find(t=>t.cents===total);if(lt&&(lt.fixed||lt.numConf<NUM_MIN_CONF)){addDoubt('total','El importe del total se leyó con poca seguridad o se corrigió una confusión de caracteres.');if(best.sources.length<2)tconf='DUDOSA';}}}
+ if(tconf==='DUDOSA')total=null;
+ res.total={cents:total,conf:total===null?'NINGUNA':tconf,sources:total===null?[]:cand.find(c=>c.cents===total).sources,candidates:total===null?cand:cand.filter(c=>c.cents===total||!(c.sources.length===1&&c.sources[0]==='desglose de IVA'))};/* v0.18: con total elegido, una cifra que solo procede del desglose de IVA no se ofrece como alternativa (el aviso de «otro importe» se mantiene) */
+ if(total===null&&!cand.length)addDoubt('total','No se encuentra un importe total fiable en el ticket.');
+ let r=total===null?{exact:false,variant:'',net:items.length?isum-dsum:null}:recon(total);
+ if(total!==null&&!r.exact&&!res.discounts.length){const alt=altLines(L);if(alt&&alt.length&&alt.reduce((a,i)=>a+i.subtotalCents,0)===total){items.length=0;items.push(...alt);res.items=items;isum=items.reduce((a,i)=>a+i.subtotalCents,0);r=recon(total);}}
+ res.hints=[];try{res.hints=hintsFrom(L);}catch{}
+ res.reconciliation={items:isum,discounts:dsum,net:r.net,total,diff:total===null||r.net===null?null:total-r.net,exact:r.exact,variant:r.variant,tendered:tendered??null,change:res.change.length?change:null,tax:res.tax.length?res.tax.reduce((a,b)=>a+b,0):null,discountsIgnored:!!r.discountsIgnored};
+ if(r.discountsIgnored)for(const d of res.discounts)d.ignored=true;
+ if(total!==null&&tendered!==undefined&&tendered!==total&&(!res.change.length||change===0))addDoubt('tendered','El importe ENTREGADO ('+fmt(tendered)+' €) no coincide con el total y no hay cambio: probable error de lectura; no se usa.');
+ if(total!==null&&!r.exact&&items.length)addDoubt('lines','Las líneas leídas ('+fmt(isum-dsum)+' €) no suman el total ('+fmt(total)+' €): el desglose no es fiable.');
+ // ---- nivel
+ let level;
+ if(total===null)level='insufficient';
+ else if(items.length&&r.exact){const bad=items.some(i=>!i.nameKnown||i.doubts.length)||res.discounts.some(d=>d.doubts.length||d.fixed||d.numConf<NUM_MIN_CONF)||!!r.discountsIgnored||res.date.conf==='DUDOSA';level=(!bad&&tconf==='VERIFICADA')?'complete':'partial';}
+ else level='total_only';
+ res.level=level;res.levelLabel=LEVELS[level];
+ return res;}
+
+/* Varias lecturas del MISMO ticket (distintas segmentaciones de pagina): se elige la mejor (total mas fiable, luego mas completa). Si dos lecturas dan
+   totales DISTINTOS y el elegido no esta VERIFICADO, el total se bloquea (no se elige ninguno por la persona). Nunca crea datos nuevos. */
+const CONF_RANK={VERIFICADA:3,PROBABLE:2,DUDOSA:1,NINGUNA:0},LEVEL_RANK={complete:3,partial:2,total_only:1,insufficient:0};
+export function bestOf(sets,opts={}){const rs=sets.map(l=>({lines:l,res:parseReceipt(l,opts)}));let bi=0;
+ for(let i=1;i<rs.length;i++){const a=rs[bi].res,b=rs[i].res,ka=CONF_RANK[a.total.conf]*10+LEVEL_RANK[a.level],kb=CONF_RANK[b.total.conf]*10+LEVEL_RANK[b.level];if(kb>ka)bi=i;}
+ const best=rs[bi],others=rs.filter((_,i)=>i!==bi).map(x=>x.res.total.cents).filter(c=>c!==null&&c!==best.res.total.cents);
+ if(others.length){const r=best.res;r.doubts.push({field:'total',reason:'Otra lectura del mismo ticket da un total distinto ('+[...new Set(others)].map(fmt).join(' / ')+' €): confirma el total con el papel.'});
+  if(r.total.conf!=='VERIFICADA'&&r.total.cents!==null){r.total.candidates.forEach(()=>{});r.total={...r.total,cents:null,conf:'NINGUNA',sources:[]};r.reconciliation={...r.reconciliation,total:null,diff:null,exact:false};r.level='insufficient';r.levelLabel=LEVELS.insufficient;}}
+ best.index=bi;best.passes=rs.length;return best;}
+/* Resultado -> datos para el formulario de compra existente (comercio, fecha, total, lineas). No guarda nada. */
+export function toDraft(res){
+ const d={shop:res.shop.value,date:res.date.value,total:res.total.cents!==null?fmt(res.total.cents):'',lines:[],note:'',level:res.level};
+ if(res.level==='complete'||res.level==='partial'){for(const i of res.items)d.lines.push({name:i.name,qty:String(i.qty).replace('.',','),price:fmt(i.unitCents),adjustment:false});
+  if(!res.reconciliation.discountsIgnored)for(const x of res.discounts)d.lines.push({name:x.name,qty:'1',price:fmt(x.cents),adjustment:true});
+  d.note=res.level==='partial'?'Leído de un ticket (OCR) y confirmado por una persona. Algunos artículos sin identificar.':'Leído de un ticket (OCR) y confirmado por una persona.';}
+ else if(res.level==='total_only'){d.note='Total leído de un ticket (OCR) y confirmado por una persona; desglose no validado.';}
+ return d;}
+/* Marcas de duda por campo para resaltar en pantalla. */
+export function doubtFlags(res){const f={total:res.total.conf!=='VERIFICADA',shop:res.shop.conf!=='PROBABLE',date:res.date.conf!=='PROBABLE',lines:res.items.map(i=>({name:!i.nameKnown,price:i.doubts.some(d=>!/^nombre ilegible/.test(d))})),reasons:res.doubts.map(x=>x.reason)};return f;}

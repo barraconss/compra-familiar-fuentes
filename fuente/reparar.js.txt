@@ -1,0 +1,11 @@
+/* Reparacion del Service Worker defectuoso (respuesta redirigida en cache). Solo SW y caches con prefijo compra-familiar-ui-preprod-; no toca localStorage, IndexedDB ni sesion. */
+const $=id=>document.getElementById(id),say=t=>{$('estado').textContent=t;};
+$('reparar').addEventListener('click',async()=>{
+ try{
+  let n=0,c=0;
+  if('serviceWorker' in navigator){for(const r of await navigator.serviceWorker.getRegistrations()){if(await r.unregister())n++;}}
+  if('caches' in window){for(const k of await caches.keys()){if(k.startsWith('compra-familiar-ui-preprod-')){if(await caches.delete(k))c++;}}}
+  say('Listo: '+n+' motor(es) eliminado(s) y '+c+' memoria(s) temporal(es) borrada(s). Cierra esta pestaña y abre de nuevo la aplicación, o pulsa «Volver».');
+  $('volver').hidden=false;
+ }catch(e){say('No se pudo reparar automáticamente ('+(e&&e.message||'error')+'). En el navegador: Ajustes del sitio → Borrar datos de este sitio (solo esta dirección de pruebas).');}
+});

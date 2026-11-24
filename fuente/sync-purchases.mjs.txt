@@ -1,0 +1,144 @@
+/* v0.11 candidata: compras compartidas del hogar (UI). Una sola fuente de verdad en Supabase (SQL 005). Sin cola offline: sin conexion las escrituras se bloquean.
+   Reintentos idempotentes con el mismo operation_id (Outbox propio, clave distinta de la lista). Fotos/justificantes NO se suben. Nada se importa automaticamente. */
+import {shared} from './sync-bridge.mjs';
+import {Outbox,friendlyError,transient} from './sync-core.mjs';
+import {openDialog} from './cf-dialog.mjs';
+import {buildPurchase,summarize,money,sealExport,validDate,parseCents,parseQty} from './shared-purchases-core.mjs';
+import {attachReceipts,addBackupControls,storeReceipt} from './purchase-receipts-ui.mjs';
+import {mountOcr,ocrEnabled} from './receipt-ocr-ui.mjs';
+// Justificantes (SQL 008): se activan con receipts:true en sync-config.js solo cuando 008 este aplicada y autorizada. Por defecto apagado.
+const RECEIPTS_ON=(()=>{try{return window.CF_CONFIG?.receipts===true||window.CF_SYNC_CONFIG?.receipts===true;}catch{return false;}})();
+// Lectura de tickets (OCR en el dispositivo): se activa con ocr:true en sync-config.js. Por defecto apagado; nunca guarda por si solo.
+const OCR_ON=ocrEnabled();
+const $=id=>document.getElementById(id);
+async function deadline(p,ms=15000){let t;try{return await Promise.race([p,new Promise((_,rej)=>t=setTimeout(()=>rej(Error('Timeout: resultado desconocido')),ms))]);}finally{clearTimeout(t);}}
+const perr=e=>{const c=String(e?.code||'');if(c==='CF004')return 'Otra persona modificó o anuló esta compra antes que tú. Se ha actualizado la lista: revisa y repite el cambio.';if(c==='CF002')return 'El hogar ha alcanzado el máximo de 20.000 compras.';if(c==='22023')return 'El servidor rechazó la compra. Revisa comercio, fecha, importes y que la suma de las líneas coincida con el total.';return friendlyError(e);};
+if($('cf-pur')&&shared){
+ const el={shop:$('cf-pur-shop'),date:$('cf-pur-date'),total:$('cf-pur-total'),note:$('cf-pur-note'),lines:$('cf-pur-lines'),msg:$('cf-pur-msg'),err:$('cf-pur-err'),retry:$('cf-pur-retry'),month:$('cf-pur-month'),report:$('cf-pur-report'),list:$('cf-pur-list'),save:$('cf-pur-save'),cancel:$('cf-pur-cancel-edit'),off:$('cf-pur-offline')};
+ const today=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+ let records=[],labels=new Map(),busy=false,editing=null,loadedFor='',serial=0,ocrPending=null;
+ const say=(m,e=false)=>{(e?el.err:el.msg).textContent=m;if(!e&&m)el.err.textContent='';};
+ const eur=c=>(c/100).toFixed(2).replace('.',',');
+ const outbox=()=>new Outbox({prefix:'cf-v011:purchase-op:',storage:localStorage,lock:(k,f)=>navigator.locks.request(k,f),uuid:()=>crypto.randomUUID(),
+  apply:async op=>{const {data,error}=await deadline(shared.db.rpc('cf_purchase_apply',{p_home:op.home,p_operation:op.id,p_request:op.request}));if(error)throw error;return data;},
+  // Si el resolutor (SQL 006) aun no existe en el servidor, el reintento sigue siendo seguro: cf_purchase_apply devuelve el mismo recibo para la misma operacion.
+  lookup:async op=>{try{const {data,error}=await deadline(shared.db.rpc('cf_purchase_resolve',{p_home:op.home,p_operation:op.id,p_request:op.request}));if(error||!data)return null;return {request:op.request,result:data};}catch{return null;}}});
+ const box=outbox();
+ const pending=()=>{const s=shared.scope();if(!s.uid||!s.home)return null;try{const o=box.read(s.uid,s.home);return o&&['pending','unknown'].includes(o.state)?o:null;}catch{return null;}};
+ const field=(parent,label,cls,attrs={})=>{const l=document.createElement('label');l.textContent=label+' ';const i=document.createElement('input');i.className=cls;Object.assign(i,attrs);l.append(i);parent.append(l);return i;};
+ function addLine(adj=false,v={}){const row=document.createElement('div');row.className='cf-pur-line';row.dataset.adj=adj?'1':'';
+  field(row,adj?'Motivo del descuento':'Artículo','cf-l-name',{maxLength:120,value:v.name||''});
+  if(!adj)field(row,'Cantidad','cf-l-qty',{inputMode:'decimal',value:v.qty!==undefined?String(v.qty).replace('.',','):'1'});
+  field(row,adj?'Importe del descuento (€)':'Precio unitario (€)','cf-l-price',{inputMode:'decimal',value:v.price||''});
+  const rm=document.createElement('button');rm.type='button';rm.className='secondary';rm.textContent='Quitar línea';rm.addEventListener('click',()=>{row.remove();syncSum(true);});row.append(rm);el.lines.append(row);if(!quiet)syncSum();return row;}
+ const formLines=()=>[...el.lines.querySelectorAll('.cf-pur-line')].map(r=>({name:r.querySelector('.cf-l-name').value,qty:r.querySelector('.cf-l-qty')?.value??'1',price:r.querySelector('.cf-l-price').value,adjustment:r.dataset.adj==='1'}));
+ /* v0.15.1: suma visible de las lineas. Antes, al quitar una linea el campo «Total» conservaba el importe antiguo y el guardado se rechazaba («no coincide con la suma de las lineas»).
+    Al QUITAR una linea el total se recalcula SOLO si coincidia con la suma anterior y la compra no viene de un ticket leido (en un borrador OCR el total del ticket es la comprobacion independiente: no se toca y se avisa); editar un importe nunca cambia el total; un total distinto de la suma se respeta y se avisa. Solo pantalla: no envia nada ni toca compras confirmadas. */
+ let lastSum=null,quiet=false;
+ const sumEl=document.createElement('p');sumEl.id='cf-pur-sum';sumEl.className='fam-note';sumEl.setAttribute('role','status');sumEl.hidden=true;el.lines.after(sumEl);
+ function linesSum(){let c=0,n=0,bad=false;for(const r of el.lines.querySelectorAll('.cf-pur-line')){n++;const price=parseCents(r.querySelector('.cf-l-price').value);if(price===null){bad=true;continue;}if(r.dataset.adj==='1'){c-=price;continue;}const q=parseQty(r.querySelector('.cf-l-qty')?.value??'1');if(q===null){bad=true;continue;}c+=Math.round(q*price);}return {n,c,bad};}
+ function syncSum(follow){if(quiet)return;const {n,c,bad}=linesSum();let recalc=false;if(!n){sumEl.textContent='';sumEl.hidden=true;lastSum=null;return;}
+  const tv=el.total.value.trim();if(follow===true&&!ocrPending&&!bad&&tv!==''&&lastSum!==null&&parseCents(tv)===lastSum){el.total.value=c>0?eur(c):'';recalc=true;}
+  if(!bad)lastSum=c;const entered=el.total.value.trim()===''?null:parseCents(el.total.value);sumEl.hidden=false;
+  sumEl.textContent='Suma de las líneas: '+(bad?'revisa los importes de las líneas':money(c))+(!bad&&entered!==null&&entered!==c?' · el total escrito ('+money(entered)+') no coincide: corrígelo o bórralo para usar la suma':'')+(recalc?' · Total recalculado al quitar la línea.':'');}
+ el.lines.addEventListener('input',()=>syncSum());
+ function resetForm(){editing=null;ocrPending=null;for(const x of document.querySelectorAll('#cf-pur .cf-doubt'))x.classList.remove('cf-doubt');el.shop.value='';el.date.value=today();el.total.value='';el.note.value='';el.lines.replaceChildren();syncSum();el.cancel.hidden=true;el.save.textContent='Guardar compra compartida';}
+ const who=id=>(id===shared.scope().uid?'tú':labels.get(id)||String(id||'').slice(0,8));
+ function lockUi(){const s=shared.scope(),ok=s.verified&&!busy;el.off.hidden=s.verified||!s.uid;for(const b of $('cf-pur').querySelectorAll('button:not(#cf-pur-pdf):not(#cf-pur-cancel-edit):not(#cf-pur-clear):not(#cf-pur-toggle-void)'))b.disabled=!ok;const clr0=$('cf-pur-clear');if(clr0)clr0.disabled=busy;for(const i of el.shop.form.querySelectorAll('input'))i.disabled=!ok;const p=pending();el.retry.hidden=!p;if(p&&s.verified&&!busy)el.retry.disabled=false;$('cf-pur-pdf').disabled=!records.length;}
+ function renderReport(rep,local){el.report.replaceChildren();const add=(t,cls='')=>{const d=document.createElement('div');d.className='cf-pur-row '+cls;d.textContent=t;el.report.append(d);return d;};
+  add('Total familiar '+rep.month+': '+money(rep.total_cents)+' · '+rep.count+' compras','cf-pur-total-row');
+  if(JSON.stringify({a:rep.total_cents,b:rep.count})!==JSON.stringify({a:local.total_cents,b:local.count}))add('⚠ El cálculo del teléfono no coincide con el del servidor; se muestra el del servidor. Actualiza.','cf-cloud-error');
+  const sec=(title,rows,fmt)=>{if(!rows.length)return;add(title,'cf-pur-h');for(const r of rows)add(fmt(r));};
+  sec('Por persona',rep.by_member,r=>who(r.user)+': '+money(r.cents)+' ('+r.count+')');sec('Por comercio',rep.by_shop,r=>r.shop+': '+money(r.cents));
+  sec('Por semana (lunes a domingo)',rep.by_week,r=>'Semana del '+r.week_start.split('-').reverse().join('/')+': '+money(r.cents));sec('Por día',rep.by_day,r=>r.date.split('-').reverse().join('/')+': '+money(r.cents));}
+ /* v0.18.3: las compras anuladas se ocultan por defecto (siguen en el servidor y en el historial; no cuentan en informes). Un boton las muestra u oculta. */
+ let showVoid=false;
+ function renderList(){el.list.replaceChildren();const nVoid=records.filter(p=>p.status==='void').length,vis=showVoid?records:records.filter(p=>p.status!=='void');
+  if(nVoid){const tb=document.createElement('button');tb.type='button';tb.className='secondary';tb.id='cf-pur-toggle-void';tb.setAttribute('aria-pressed',String(showVoid));tb.textContent=showVoid?'Ocultar compras anuladas':'Mostrar compras anuladas ('+nVoid+')';tb.addEventListener('click',()=>{showVoid=!showVoid;renderList();});el.list.append(tb);}
+  if(!vis.length){const p=document.createElement('p');p.textContent=records.length?'No hay compras vigentes este mes. Las anuladas están ocultas (siguen guardadas en el historial).':'Aún no hay compras compartidas este mes.';el.list.append(p);return;}
+  for(const p of vis){const d=document.createElement('div');d.className='cf-pur-item'+(p.status==='void'?' void':'');d.dataset.id=p.id;const t=document.createElement('div');t.textContent=p.date.split('-').reverse().join('/')+' · '+p.shop+' · '+money(p.cents)+' · registrada por '+who(p.created_by)+(p.status==='void'?' · ANULADA'+(p.void_reason?' ('+p.void_reason+')':'')+' por '+who(p.voided_by):'')+(p.corrects_id?' · corrige otra compra':'');d.append(t);
+   if(p.note){const n=document.createElement('small');n.textContent='Nota: '+p.note;d.append(n);}
+   if(p.lines.length){const det=document.createElement('details'),sm=document.createElement('summary');sm.textContent=p.lines.length+' líneas';det.append(sm);for(const l of p.lines){const r=document.createElement('div');r.textContent=l.kind==='adjustment'?l.name+' (descuento): '+money(l.subtotalCents):l.name+' · '+String(l.qty).replace('.',',')+' × '+money(l.unitCents)+' = '+money(l.subtotalCents);det.append(r);}d.append(det);}
+   if(p.status==='confirmed'){const c=document.createElement('button');c.type='button';c.className='secondary';c.textContent='Corregir';c.addEventListener('click',()=>startCorrect(p));const a=document.createElement('button');a.type='button';a.className='secondary';a.textContent='Anular';a.addEventListener('click',()=>voidPurchase(p,a));d.append(c,a);}
+   if(RECEIPTS_ON)attachReceipts(d,p,{shared,say,perr,who,onOcr:OCR_ON&&ocr?(pp,file)=>ocr.process(file,{linked:pp}):undefined});
+   el.list.append(d);}}
+ async function refresh(){const s=shared.scope(),n=++serial;if(!s.verified||!validMonth())return;try{
+   const m=el.month.value,[l,r,lab]=await Promise.all([deadline(shared.db.rpc('cf_purchases_list',{p_home:s.home,p_month:m,p_include_void:true})),deadline(shared.db.rpc('cf_report_month',{p_home:s.home,p_month:m})),deadline(shared.db.rpc('cf_member_labels',{p_home:s.home})).catch(()=>({data:[]}))]);
+   if(l.error)throw l.error;if(r.error)throw r.error;if(n!==serial||s.home!==shared.scope().home)return;
+   labels=new Map((lab?.data||[]).map(x=>[x.user,x.label]));records=l.data||[];renderList();renderReport(r.data,summarize(records,m));loadedFor=s.home+':'+m;say('Compras consultadas en el servidor.');}catch(e){say(perr(e),true);}finally{lockUi();}}
+ const validMonth=()=>/^\d{4}-(0[1-9]|1[0-2])$/.test(el.month.value);
+ async function run(fn){if(busy)return false;busy=true;lockUi();let okMsg='',done=false;try{const op=await fn();if(op?.state==='confirmed'){okMsg=editing?'Corrección guardada.':'Operación confirmada. Una sola vez en el historial compartido.';say(okMsg);done=true;if(op.request?.kind==='create'||op.request?.kind==='correct'){const d=op.request.kind==='create'?op.request.date:op.request.new.date;resetForm();if(validDate(d))el.month.value=d.slice(0,7);}el.err.textContent='';}}
+  catch(e){const tr=transient(e);say(perr(e)+(tr?' · El resultado puede ser desconocido: pulsa «Reintentar compra pendiente»; se conserva la misma operación y no se duplica.':''),true);}finally{busy=false;await refresh();if(okMsg)say(okMsg);lockUi();}return done;}
+ function startCorrect(p){editing={id:p.id,revision:p.revision};el.shop.value=p.shop;el.date.value=p.date;el.note.value=p.note;el.lines.replaceChildren();el.total.value=p.lines.length?'':eur(p.cents);quiet=true;for(const l of p.lines)addLine(l.kind==='adjustment',{name:l.name,qty:l.qty,price:eur(Math.abs(l.unitCents))});quiet=false;lastSum=null;syncSum();el.cancel.hidden=false;el.save.textContent='Guardar corrección (anula la compra original y crea la nueva)';say('Corrigiendo una compra: la original se conservará como anulada y enlazada.');el.shop.focus();}
+ async function voidPurchase(p,opener){const v=await openDialog({title:'¿Anular esta compra?',body:p.shop+' · '+money(p.cents)+'. Se conserva en el historial como anulada, con tu nombre, y deja de contar en los informes de los dos teléfonos.',fields:[{name:'reason',label:'Motivo (opcional)',value:''}],confirmLabel:'Sí, anular',cancelLabel:'Cancelar',focus:'cancel',fallbackFocus:opener});if(v===null)return;
+  const s=shared.scope();if(!s.verified){say('Sin conexión o sesión no verificada: no se puede anular.',true);return;}const pd=pending();if(pd){say('Hay una operación sin confirmar. Reintenta antes.',true);return;}
+  await run(()=>box.execute(s.uid,s.home,{kind:'void',id:p.id,revision:p.revision,reason:String(v.reason||'').trim().slice(0,300)}));}
+ /* OCR: rellena el formulario existente como PROPUESTA (resalta lo dudoso); el boton de guardar pasa a «Confirmar compra». Nada se guarda aqui. */
+ function markDoubts(flags,nItems){const mark=x=>{if(!x)return;x.classList.add('cf-doubt');x.addEventListener('input',()=>x.classList.remove('cf-doubt'),{once:true});};if(flags.total)mark(el.total);if(flags.shop)mark(el.shop);if(flags.date)mark(el.date);const rows=[...el.lines.querySelectorAll('.cf-pur-line')];for(let i=0;i<nItems&&i<rows.length;i++){if(flags.lines[i].name)mark(rows[i].querySelector('.cf-l-name'));if(flags.lines[i].price)mark(rows[i].querySelector('.cf-l-price'));}}
+ function fillFromOcr(draft,info){const {file,flags,linked,level}=info;if(linked)startCorrect(linked);else resetForm();
+  if(level==='insufficient'){ocrPending={file:linked?null:file};el.save.textContent=linked?'Confirmar corrección (anula la compra original y crea la nueva)':'Confirmar compra';el.cancel.hidden=false;(linked?el.total:el.shop).focus();return;}
+  if(draft.shop)el.shop.value=draft.shop;if(draft.date)el.date.value=draft.date;el.lines.replaceChildren();el.total.value=draft.total;if(draft.note)el.note.value=draft.note;
+  quiet=true;for(const l of draft.lines)addLine(l.adjustment,{name:l.name,qty:l.qty,price:l.price});quiet=false;lastSum=null;syncSum();markDoubts(flags,draft.lines.filter(l=>!l.adjustment).length);
+  ocrPending={file:linked?null:file};el.save.textContent=linked?'Confirmar corrección (anula la compra original y crea la nueva)':'Confirmar compra';el.cancel.hidden=false;el.shop.form.scrollIntoView?.({block:'start'});}
+ /* v0.16: GUARDADO RAPIDO desde el lector de tickets. Una sola compra por confirmacion (id estable para reintentos, misma cola/ledger), aviso NO bloqueante de posible duplicado,
+    justificante subido y COMPROBADO antes de darlo por guardado, estado visible si falla y foto conservada. No contabiliza dos veces: un desglose posterior es una correccion (la original queda anulada). */
+ const SHOPKEY='cf-ocr-shops';
+ const cifMap=()=>{try{return JSON.parse(localStorage.getItem(SHOPKEY)||'{}')||{};}catch{return {};}};
+ const rememberShop=(cif,name)=>{if(!cif||!name)return;try{const m=cifMap();m[cif]=String(name).slice(0,300);localStorage.setItem(SHOPKEY,JSON.stringify(m));}catch{}};
+ const hist={at:0,home:'',names:[]};
+ async function historyNames(){const s=shared.scope();if(!s.verified)return hist.home===s.home?hist.names:[];if(hist.home===s.home&&Date.now()-hist.at<300000)return hist.names;
+  try{const d=new Date(),ms=[0,1,2].map(k=>{const x=new Date(d.getFullYear(),d.getMonth()-k,1);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0');});
+   const rs=await Promise.all(ms.map(m=>deadline(shared.db.rpc('cf_purchases_list',{p_home:s.home,p_month:m,p_include_void:false}))));const seen=new Map();for(const r of rs)for(const p of (r&&r.data)||[]){const k=String(p.shop||'').trim().toUpperCase();if(k&&!seen.has(k))seen.set(k,String(p.shop).trim());}hist.names=[...seen.values()];hist.at=Date.now();hist.home=s.home;}catch{}
+  return hist.home===s.home?hist.names:[];}
+ async function findDuplicate(req,s){try{const r=await deadline(shared.db.rpc('cf_purchases_list',{p_home:s.home,p_month:req.date.slice(0,7),p_include_void:false}));return ((r&&r.data)||[]).find(p=>p.status==='confirmed'&&p.date===req.date&&Number(p.cents)===req.cents)||null;}catch{return null;}}
+ async function receiptOf(id,s){const v=await deadline(shared.db.rpc('cf_receipts_list',{p_home:s.home,p_purchase:id,p_include_void:false}));return v&&!v.error?(v.data||[]).filter(r=>r.status==='ready'):null;}
+ async function attachQuick(id,file){const s=shared.scope();
+  try{const st=await storeReceipt(shared,s.home,id,file,0);const ready=await receiptOf(id,s);
+   return ready&&ready.some(r=>r.id===st.id)?{ok:true,receipt:'verified',message:'✅ Compra guardada una sola vez y ticket original guardado y COMPROBADO. Los dos teléfonos lo ven.'}:{ok:true,receipt:'unverified',message:'La compra SÍ se guardó, pero NO se ha podido comprobar que el ticket esté guardado. Pulsa «Reintentar subida del ticket»; la compra no se duplicará.'};}
+  catch(e){return {ok:true,receipt:'failed',message:'La compra SÍ se guardó, pero el ticket NO se ha subido ('+(e&&e.message&&!e.code?e.message:perr(e))+'). La foto sigue aquí: pulsa «Reintentar subida del ticket»; la compra no se duplicará.'};}}
+ async function retryReceipt(q){let s=shared.scope();if(!s.verified&&typeof shared.ready==='function'){s=await shared.ready();}
+  if(!s.verified)return {ok:true,receipt:'failed',message:'Sin conexión o sesión sin verificar: el ticket sigue SIN guardar. La foto sigue aquí; vuelve a intentarlo en unos segundos.'};
+  try{const ready=await receiptOf(q.id,s);if(ready&&ready.length)return {ok:true,receipt:'verified',message:'✅ El ticket ya estaba guardado y comprobado. No se ha vuelto a subir.'};}catch{}
+  return attachQuick(q.id,q.file);}
+ async function quickSave(q){let s=shared.scope();if(!s.verified&&typeof shared.ready==='function'){say('Comprobando la sesión…');s=await shared.ready();}
+  if(!s.verified)return {ok:false,stage:'session',message:'Sin conexión o sesión sin verificar: no se ha guardado nada. La foto sigue aquí; vuelve a intentarlo.'};
+  if(busy)return {ok:false,stage:'busy',message:'Hay otra operación en curso: espera un momento y vuelve a pulsar.'};
+  const pd=pending();if(pd&&!(pd.request&&pd.request.id===q.id))return {ok:false,stage:'pending',message:'Hay una compra sin confirmar. Pulsa «Reintentar compra pendiente» antes de registrar otra.'};
+  let req;try{req=buildPurchase({id:q.id,shop:q.shop,date:q.date,total:q.total,note:q.note,lines:[]});}catch(x){return {ok:false,stage:'validate',message:x.message};}
+  if(!q.ignoreDup){const d=await findDuplicate(req,s);if(d)return {ok:false,stage:'duplicate',message:'⚠ Posible ticket duplicado: ya hay una compra del '+d.date.split('-').reverse().join('/')+' de '+money(d.cents)+' en «'+d.shop+'». No se ha guardado nada. Si es otra compra distinta, pulsa «Guardar igualmente».'};}
+  busy=true;lockUi();let op;
+  try{op=await box.execute(s.uid,s.home,req);}
+  catch(e){busy=false;lockUi();const tr=transient(e);return {ok:false,stage:tr?'unconfirmed':'rejected',message:perr(e)+(tr?' · El resultado puede ser desconocido: pulsa «Reintentar compra pendiente»; se conserva la misma operación y no se duplica.':'')};}
+  busy=false;
+  if(op?.state!=='confirmed'){lockUi();return {ok:false,stage:'unconfirmed',message:'La compra quedó pendiente de confirmar: pulsa «Reintentar compra pendiente»; se conserva la misma operación y no se duplica.'};}
+  el.month.value=q.date.slice(0,7);await refresh();lockUi();return attachQuick(q.id,q.file);}
+ async function quickRetry(q){let s=shared.scope();if(!s.verified&&typeof shared.ready==='function'){s=await shared.ready();}
+  if(!s.verified)return {ok:false,stage:'unconfirmed',message:'Sin conexión o sesión sin verificar: la compra sigue pendiente. Vuelve a intentarlo en unos segundos.'};
+  busy=true;lockUi();let op;try{op=await box.retry(s.uid,s.home);}catch(e){busy=false;lockUi();return {ok:false,stage:'unconfirmed',message:perr(e)+' · La compra sigue pendiente; no se duplica.'};}
+  busy=false;if(op?.state!=='confirmed'){lockUi();return {ok:false,stage:'unconfirmed',message:'La compra sigue pendiente de confirmar.'};}
+  if(op.request&&op.request.date)el.month.value=op.request.date.slice(0,7);await refresh();lockUi();return attachQuick(q.id,q.file);}
+ const ocr=OCR_ON?mountOcr({parent:el.shop.form.parentNode,before:el.shop.form,say,onApply:fillFromOcr,onQuickSave:quickSave,onQuickRetry:quickRetry,onRetryReceipt:retryReceipt,history:historyNames,cifMap,rememberShop}):null;
+ $('cf-pur-addline').addEventListener('click',()=>addLine(false));$('cf-pur-adddisc').addEventListener('click',()=>addLine(true));
+ el.cancel.addEventListener('click',()=>{resetForm();say('Corrección cancelada.');});
+/* v0.14.4: «Limpiar formulario» es solo local (pantalla): no envia nada ni toca compras confirmadas ni justificantes. Si hay algo escrito, pide confirmacion con Cancelar por defecto. */
+ const clr=$('cf-pur-clear');if(clr)clr.addEventListener('click',async()=>{if(busy)return;const dirty=!!(el.shop.value.trim()||el.total.value.trim()||el.note.value.trim()||el.lines.children.length||editing||ocrPending);
+  if(dirty){const v=await openDialog({title:'¿Limpiar el formulario?',body:(editing?'Se descarta la corrección en curso. ':'')+'Se borra lo escrito en pantalla (comercio, fecha, total, nota y líneas)'+(ocrPending?' y el borrador leído del ticket':'')+'. No se modifica ninguna compra confirmada ni ningún justificante.',confirmLabel:'Sí, limpiar',cancelLabel:'Cancelar',focus:'cancel',fallbackFocus:clr});if(v===null)return;}
+  resetForm();say('Formulario limpio. No se ha modificado ninguna compra confirmada.');});
+ el.shop.form.addEventListener('submit',async e=>{e.preventDefault();const s=shared.scope();el.err.textContent='';
+  if(!s.verified){say('Sin conexión o sin sesión verificada: no se pueden registrar compras. Tus datos locales no se tocan.',true);return;}
+  if(pending()){say('Hay una compra sin confirmar. Pulsa «Reintentar compra pendiente» antes de registrar otra.',true);return;}
+  let req;try{req=buildPurchase({id:crypto.randomUUID(),shop:el.shop.value,date:el.date.value,total:el.total.value,note:el.note.value,lines:formLines()});}catch(x){say(x.message,true);return;}
+  if(editing){const {kind,...nw}=req;req={kind:'correct',id:editing.id,revision:editing.revision,new:nw};}
+  const oc=ocrPending,pid=req.id;
+  if(oc){const nd=document.querySelectorAll('#cf-pur .cf-doubt').length;if(nd){const v=await openDialog({title:'Quedan datos dudosos sin revisar',body:'Hay '+nd+' campo'+(nd>1?'s':'')+' resaltado'+(nd>1?'s':'')+' que no has tocado. Comprueba cada uno con el ticket. ¿Confirmas la compra tal como está?',fields:[],confirmLabel:'Sí, confirmar',cancelLabel:'Seguir revisando',focus:'cancel',fallbackFocus:el.save});if(v===null)return;}}
+  const done=await run(()=>box.execute(s.uid,s.home,req));
+  if(done&&oc&&oc.file&&RECEIPTS_ON){try{say('Adjuntando el ticket original como justificante…');await storeReceipt(shared,s.home,pid,oc.file,0);say('Compra confirmada y ticket original guardado como justificante (los dos teléfonos lo verán).');await refresh();}catch(x){say('La compra SÍ se guardó, pero el ticket no se pudo adjuntar ('+(x&&x.message&&!x.code?x.message:perr(x))+'). Adjúntalo desde la compra.',true);}}});
+ el.retry.addEventListener('click',()=>{const s=shared.scope();if(!s.verified){say('Sin conexión: no se puede reintentar todavía.',true);return;}run(()=>box.retry(s.uid,s.home));});
+ el.month.addEventListener('change',refresh);$('cf-pur-refresh').addEventListener('click',refresh);
+ $('cf-pur-export').addEventListener('click',async()=>{const s=shared.scope();if(!s.verified){say('Sin conexión: no se puede exportar ahora.',true);return;}try{const {data,error}=await deadline(shared.db.rpc('cf_purchases_export',{p_home:s.home}));if(error)throw error;const [ia,ib]=await Promise.all([deadline(shared.db.rpc('cf_list',{p_home:s.home,p_archived:false})),deadline(shared.db.rpc('cf_list',{p_home:s.home,p_archived:true}))]);if(ia.error)throw ia.error;if(ib.error)throw ib.error;if((ia.data||[]).length>500||(ib.data||[]).length>500)throw Error('Demasiados artículos para una copia completa: exporta en dos pasos o avisa al titular.');const byId=new Map();for(const x of [...(ia.data||[]),...(ib.data||[])])byId.set(x.id,x);const items=[...byId.values()].sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at))||String(a.id).localeCompare(String(b.id)));const sealed=await sealExport({...data,items}),blob=new Blob([JSON.stringify(sealed,null,1)],{type:'application/json'}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='compra-familiar-historial-compartido-'+today()+'.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);say('Copia exportada: '+sealed.integrity.purchase_count+' compras y '+sealed.integrity.item_count+' artículos, huella SHA-256 '+sealed.integrity.purchases_sha256.slice(0,12)+'… incluida en el archivo. Guárdalo fuera del teléfono.');}catch(e){say(perr(e),true);}});
+ $('cf-pur-pdf').addEventListener('click',()=>{try{const sel=records.filter(p=>p.status==='confirmed');const pdf=window.compraReportPDF.build(el.month.value,sel),file=new File([pdf],'COMPRA_FAMILIAR_informe_compartido_'+el.month.value+'.pdf',{type:'application/pdf'}),u=URL.createObjectURL(file),a=document.createElement('a');a.href=u;a.download=file.name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);say('PDF del informe familiar generado (mismo contenido para los dos teléfonos).');}catch(e){say('No se pudo generar el PDF: '+e.message,true);}});
+ if(RECEIPTS_ON)addBackupControls($('cf-pur-export').parentNode,{shared,say,perr,today});
+ el.month.value=today().slice(0,7);el.date.value=today();
+ shared.onChange(()=>{const s=shared.scope();lockUi();if(s.verified&&!busy&&loadedFor!==s.home+':'+el.month.value)refresh();if(!s.uid&&records.length){records=[];el.list.replaceChildren();el.report.replaceChildren();loadedFor='';}});
+ lockUi();
+}

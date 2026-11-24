@@ -1,0 +1,92 @@
+
+/* Integración experimental de consulta nutricional en Internet, solo lectura. */
+(()=>{'use strict';
+ const $=id=>document.getElementById(id), opt=$('product-options'),modal=$('nutrition-modal');
+ let selected=null, currentQuery='', lastRequest=0;
+ const safeNum=(value)=>typeof value==='number'&&Number.isFinite(value)?value:null;
+ const fmt=n=>n===null?'No disponible':new Intl.NumberFormat('es-ES',{maximumFractionDigits:2}).format(n);
+
+ const groupGuide=(raw)=>{
+  const name=String(raw||'').toLocaleLowerCase('es').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().replace(/\s+/g,' ');
+  const groups=[
+   {re:/^(manzana|pera|platano|banana|naranja|mandarina|kiwi|melocoton|fresa|fresas|uva|uvas|sandia|melon|fruta|frutas)$/,label:'Frutas frescas',advice:'Consumo diario. La AESAN aconseja incorporar fruta fresca habitualmente dentro de una alimentación variada.'},
+   {re:/^(tomate|tomates|lechuga|zanahoria|zanahorias|brocoli|espinaca|espinacas|pimiento|pimientos|calabacin|berenjena|pepino|verdura|verduras|hortalizas)$/,label:'Verduras y hortalizas',advice:'Consumo diario, con variedad. Las verduras y hortalizas tienen un papel principal en las recomendaciones de la AESAN.'},
+   {re:/^(lentejas|garbanzos|alubias|judias secas|legumbres)$/,label:'Legumbres',advice:'Consumo frecuente. La AESAN recomienda al menos cuatro raciones semanales de legumbres, según necesidades.'},
+   {re:/^(arroz integral|pasta integral|pan integral|avena|copos de avena|cereales integrales)$/,label:'Cereales integrales',advice:'Preferir cereales integrales frente a refinados como parte de una dieta variada.'},
+   {re:/^(arroz|pasta|pan|patata|patatas|cuscus)$/,label:'Cereales o tubérculos',advice:'Ajustar cantidad a las necesidades y preferir versiones integrales cuando corresponda.'},
+   {re:/^(aceite de oliva|aceite de oliva virgen|aceite de oliva virgen extra)$/,label:'Aceite de oliva',advice:'Grasa culinaria preferente en el patrón mediterráneo; usar cantidades adecuadas.'},
+   {re:/^(nueces|almendras|avellanas|pistachos|frutos secos)$/,label:'Frutos secos',advice:'Consumir frecuentemente, mejor naturales o tostados sin sal ni azúcares añadidos.'},
+   {re:/^(agua|agua del grifo|agua mineral)$/,label:'Agua',advice:'Bebida de elección habitual según necesidades individuales.'},
+   {re:/^(sardina|sardinas|salmon|caballa|merluza|pescado)$/,label:'Pescado',advice:'Consumir varias veces a la semana, alternando variedades y siguiendo recomendaciones específicas cuando correspondan.'},
+   {re:/^(huevo|huevos)$/,label:'Huevos',advice:'Alimento dentro de una dieta variada; la frecuencia depende del conjunto de la alimentación y necesidades.'},
+   {re:/^(leche|leche entera|leche semidesnatada|leche desnatada|yogur natural|queso fresco)$/,label:'Lácteos',advice:'Consumo moderado según necesidades; revisar azúcares añadidos y sal cuando sean productos envasados.'},
+   {re:/^(salchichas|bacon|beicon|embutido|chorizo|mortadela)$/,label:'Carne procesada',advice:'La AESAN recomienda reducir al mínimo las carnes procesadas.'}
+  ];
+  return groups.find(g=>g.re.test(name))||null;
+ };
+ function gradeFor(item){
+  const v=String(item?.nutriGrade||'').toUpperCase();
+  if(/^[A-E]$/.test(v) && item?.nutriCode && item?.nutriSelectedFor===item.name)return {label:v,css:'n-'+v.toLowerCase(),title:'Nutri-Score '+v+' · '+(item.nutriProductName||'producto identificado')+' · consultado '+(item.nutriCheckedAt?item.nutriCheckedAt.slice(0,10):'en fecha no registrada')};
+  const group=groupGuide(item?.name);
+  return group?{label:'G',css:'generic',title:'Orientación general: '+group.label+' (no es Nutri-Score)'}:null;
+ }
+ window.compraNutritionGuide={groupGuide,gradeFor};
+
+ function openOptions(id){const item=window.compraListData?.read?.().find(x=>x.id===id);if(!item)return;selected=item;$('options-title').textContent=item.name;opt.showModal();}
+ window.openProductMenu=openOptions;
+ $('option-edit').addEventListener('click',()=>{opt.close();if(!selected)return;window.compraListData?.openEdit(selected.id);});
+ $('option-consult').addEventListener('click',()=>{opt.close();if(!selected)return;$('nutrition-query').value=selected.name;currentQuery=selected.name;modal.showModal();showGenericAdvice(selected.name);search(selected.name);});
+ $('option-cancel').onclick=()=>opt.close();$('nutrition-close').onclick=()=>modal.close();
+ function status(t){$('nutrition-status').textContent=t;}
+
+ function showGenericAdvice(name){
+  const g=groupGuide(name),box=$('generic-advice');box.replaceChildren();
+  if(!g)return;
+  const div=document.createElement('div');div.className='food-advice';
+  const label=document.createElement('strong');label.textContent='Grupo orientativo: '+g.label+' (no es Nutri-Score)';
+  const message=document.createElement('span');message.textContent=g.advice+' La clasificación se basa únicamente en el nombre genérico; no equivale a evaluar un producto o una dieta individual.';
+  div.append(label,message);box.append(div);
+ }
+ function storeGrade(p){
+  if(!selected||!p?.code)return {ok:false,message:'No se puede asociar esta ficha: falta el código del producto.'};
+  const rows=window.compraListData?.read?.()||[];
+  const item=rows.find(x=>x.id===selected.id);
+  if(!item)return {ok:false,message:'El artículo ya no está en la lista. No se guardó nada.'};
+  const grade=String(p.nutriscore_grade||'').toUpperCase();
+  // Al elegir otro producto, una nota anterior no puede sobrevivir si la nueva ficha no la contiene.
+  delete item.nutriGrade;
+  item.nutriCode=String(p.code);
+  item.nutriProductName=String(p.product_name_es||p.product_name||'Producto sin nombre');
+  item.nutriSelectedFor=item.name;
+  item.nutriCheckedAt=new Date().toISOString();
+  if(/^[A-E]$/.test(grade))item.nutriGrade=grade;
+  window.compraListData.replace(rows);
+  return {ok:true,message:/^[A-E]$/.test(grade)?
+    'Ficha asociada y Nutri-Score '+grade+' guardado. Comprueba marca y envase.':
+    'Ficha asociada sin Nutri-Score. Se ha retirado cualquier nota anterior.'};
+ }
+
+ function resultButton(p){const b=document.createElement('button');b.type='button';b.className='nutri-result';const title=document.createElement('strong');title.textContent=p.product_name_es||p.product_name||'Sin nombre';const more=document.createElement('span');more.textContent=[p.brands||'',p.quantity||'',p.code?'Código '+p.code:''].filter(Boolean).join(' · ');b.append(title,more);b.addEventListener('click',()=>showProduct(p));return b;}
+ function addRow(container,label,value,unit){const l=document.createElement('div');l.className='nutri-label';l.textContent=label;const v=document.createElement('b');v.textContent=value===null?'No disponible':fmt(value)+(unit||'');container.append(l,v);}
+ function showProduct(p){const n=p.nutriments||{},node=$('nutrition-details');node.replaceChildren();const h=document.createElement('h3');h.textContent=(p.product_name_es||p.product_name||'Producto')+' · por 100 g / 100 ml';node.append(h);
+ const values=[['Energía',safeNum(n['energy-kcal_100g']),' kcal'],['Proteínas',safeNum(n.proteins_100g),' g'],['Hidratos de carbono',safeNum(n.carbohydrates_100g),' g'],['Grasas',safeNum(n.fat_100g),' g'],['Azúcares',safeNum(n.sugars_100g),' g'],['Grasas saturadas',safeNum(n['saturated-fat_100g']),' g'],['Fibra',safeNum(n.fiber_100g),' g'],['Sal',safeNum(n.salt_100g),' g']];
+ let micro=[['Calcio',n.calcium_100g,'mg'],['Hierro',n.iron_100g,'mg'],['Potasio',n.potassium_100g,'mg'],['Magnesio',n.magnesium_100g,'mg'],['Vitamina C',n['vitamin-c_100g'],'mg'],['Vitamina D',n['vitamin-d_100g'],'µg'],['Vitamina B12',n['vitamin-b12_100g'],'µg']];
+ const box=document.createElement('div');box.className='nutri-rows';for(const [name,v,unit] of values)addRow(box,name,v,unit);node.append(box);
+ const m=micro.filter(x=>safeNum(x[1])!==null);if(m.length){const mh=document.createElement('h4');mh.textContent='Micronutrientes disponibles';node.append(mh);const grid=document.createElement('div');grid.className='nutri-rows';for(const [name,v,unit] of m){let multiplier=unit==='mg'?1000:1000000;const calc=safeNum(v)*multiplier;addRow(grid,name,calc>=0&&calc<=100000?calc:null,' '+unit);}node.append(grid);}else{const p=document.createElement('p');p.textContent='No hay micronutrientes registrados para este producto.';node.append(p);}
+ const grade=String(p.nutriscore_grade||'').toUpperCase();
+ const score=document.createElement('p');score.textContent=/^[A-E]$/.test(grade)?'Nutri-Score del producto: '+grade+' (comparar preferentemente productos similares).':'Nutri-Score no disponible en esta ficha.';
+ node.append(score);
+ const nova=Number(p.nova_group);
+ const novaLabel=document.createElement('p');novaLabel.textContent=[1,2,3,4].includes(nova)?'Grupo NOVA declarado: '+nova+' (clasificación por grado de procesamiento, distinta del Nutri-Score).':'Grupo NOVA no disponible.';node.append(novaLabel);
+ const heading=document.createElement('h4');heading.textContent='Lista de ingredientes';node.append(heading);
+ const ingredients=document.createElement('div');ingredients.className='food-ingredients';ingredients.textContent=String(p.ingredients_text_es||p.ingredients_text||'Ingredientes no disponibles. Comprueba el envase.').slice(0,7000);node.append(ingredients);
+ const note=document.createElement('p');note.textContent='Datos colaborativos de Open Food Facts. Verifica marca, tamaño y código frente al envase. Ni el grupo genérico ni Nutri-Score sustituyen una valoración dietética individual.';node.append(note);const gradeBtn=document.createElement('button');gradeBtn.type='button';gradeBtn.className='secondary';gradeBtn.textContent='Usar este producto en mi lista';gradeBtn.disabled=!p.code;gradeBtn.title=p.code?'Asociar la ficha elegida a este artículo':'No se puede asociar una ficha sin código';gradeBtn.addEventListener('click',()=>{const result=storeGrade(p);status(result.message);});node.append(gradeBtn);status('Resultado consultado. No se ha guardado en tu lista.');}
+ async function search(query){currentQuery=query.trim();if(!currentQuery)return;const seq=++lastRequest;$('nutrition-results').replaceChildren();$('nutrition-details').replaceChildren();status('Buscando en Open Food Facts…');let url;
+ const fields='code,product_name,product_name_es,brands,quantity,nutriments,ingredients_text_es,ingredients_text,nutriscore_grade,nova_group';const barcode=/^\d{8,14}$/.test(currentQuery);
+ if(barcode)url='https://world.openfoodfacts.org/api/v2/product/'+encodeURIComponent(currentQuery)+'.json?fields='+encodeURIComponent(fields);
+ else url='https://world.openfoodfacts.org/cgi/search.pl?search_terms='+encodeURIComponent(currentQuery)+'&search_simple=1&action=process&json=1&page_size=8&fields='+encodeURIComponent(fields);
+ try{const c=new AbortController();const timeout=setTimeout(()=>c.abort(),12000);let res;try{res=await fetch(url,{signal:c.signal,headers:{'Accept':'application/json'}});}finally{clearTimeout(timeout)}if(seq!==lastRequest)return;if(!res.ok)throw new Error('HTTP '+res.status);const data=await res.json();const list=barcode?(data.status===1&&data.product?[data.product]:[]):(Array.isArray(data.products)?data.products:[]);if(!list.length){status('Sin resultados. Prueba con una marca o código más específico.');return;}status('Elige el producto que coincida con el que quieres consultar.');const node=$('nutrition-results');list.filter(p=>p&&(p.nutriments||p.ingredients_text||p.ingredients_text_es)).slice(0,8).forEach(p=>node.append(resultButton(p)));if(!node.children.length)status('Hay coincidencias, pero no hay fichas con nutrientes ni ingredientes disponibles.');if(barcode&&list.length===1)showProduct(list[0]);}
+ catch(e){if(seq!==lastRequest)return;status('No ha sido posible consultar desde este archivo local. Necesitas conexión; también puede existir un bloqueo del navegador o de la API. Usa «Abrir búsqueda web» como alternativa.');}}
+ $('nutrition-search-form').addEventListener('submit',e=>{e.preventDefault();search($('nutrition-query').value);});
+ $('nutrition-open-web').addEventListener('click',()=>{const q=$('nutrition-query').value.trim();if(!q)return;window.open('https://world.openfoodfacts.org/cgi/search.pl?search_terms='+encodeURIComponent(q)+'&search_simple=1&action=process','_blank','noopener,noreferrer');});
+})();

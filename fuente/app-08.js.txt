@@ -1,0 +1,9 @@
+
+/* PWA: registro progresivo; nunca registra SW desde file:// ni content:// */
+(function(){
+  if (!('serviceWorker' in navigator) || !window.isSecureContext || !/^https?:$/.test(location.protocol)) return;
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('./sw.js', {scope:'./'})
+      .catch(function(error){console.warn('La instalación sin conexión no está disponible:', error.message);});
+  });
+})();

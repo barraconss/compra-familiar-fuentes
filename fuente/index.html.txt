@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+
+<html lang="es" data-version="v0.18.3">
+<head>
+<meta charset="utf-8"/><meta content="width=device-width,initial-scale=1,viewport-fit=cover" name="viewport"/>
+<meta content="#f8ba64" name="theme-color"/>
+<title>Compra Familiar</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#1c302b;background:#f5f7f3;font-synthesis:none}*{box-sizing:border-box}body{margin:0}button,input{font:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible{outline:3px solid #f3bf70;outline-offset:2px}.app{max-width:700px;margin:auto;min-height:100vh;background:#fbfcfa;padding:0 18px 100px}.top{background:#173f39;color:#fff;margin:0 -18px;padding:26px 22px 20px;border-radius:0 0 26px 26px}.brand{display:flex;justify-content:space-between;align-items:center;gap:12px}.eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;opacity:.77;font-weight:750}.top h1{font-size:29px;letter-spacing:-1px;margin:5px 0 0}.bag{background:#ffffff20;border:1px solid #ffffff30;width:48px;height:48px;border-radius:15px;display:grid;place-items:center;font-size:26px}.top p{margin:12px 0 0;color:#d6e6df;font-size:14px}.notice{background:#eff6e9;border:1px solid #dbe8d1;color:#3e5b42;border-radius:14px;padding:12px 14px;font-size:12px;line-height:1.5;margin-top:18px}.summary{display:flex;gap:12px;margin:20px 0 13px}.stat{flex:1;border-radius:16px;background:#f0f4ec;padding:15px 16px}.stat strong{font-size:24px}.stat span{display:block;color:#66776f;font-size:12px;margin-top:2px}.section-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:17px 0 10px}.section-head h2{font-size:17px;margin:0}.section-head small{color:#6c7772}.form{display:flex;gap:8px;margin:12px 0 18px}.form input{width:100%;min-width:0;border:1px solid #d6dfd7;border-radius:13px;background:#fff;padding:13px;font-size:16px}.primary{border:0;background:#24745c;color:#fff;font-weight:750;border-radius:13px;padding:12px 17px;min-height:46px;white-space:nowrap}.primary:hover{background:#1a5c49}.list{display:flex;flex-direction:column;gap:9px}.item{display:flex;align-items:center;gap:9px;border:1px solid #e0e6df;background:#fff;border-radius:16px;padding:11px 10px;min-height:72px;box-shadow:0 3px 10px #0a261006}.item.bought{background:#f0f7ef;border-color:#d4e8d3}.check{height:35px;width:35px;flex:none;border-radius:50%;border:2px solid #b9c7be;color:#a7b4ab;background:#fff;font-size:20px;line-height:1}.bought .check{background:#24745c;color:#fff;border-color:#24745c}.name{flex:1;min-width:0;overflow-wrap:anywhere}.name strong{display:block;font-size:16px;font-weight:670}.bought .name strong{color:#437e63;text-decoration:line-through}.name small{color:#7a8c80;font-size:12px}.actions{display:flex;align-items:center;gap:1px}.icon-btn{width:37px;height:39px;border:0;border-radius:10px;background:transparent;color:#53635a;font-size:19px}.icon-btn:hover{background:#eef3ec}.empty{border:1px dashed #ccd9ce;color:#68786c;text-align:center;padding:28px;border-radius:16px}.toolbar{display:flex;gap:10px;margin:18px 0;flex-wrap:wrap}.secondary{border:1px solid #d8e3d8;background:#fff;border-radius:12px;padding:10px 13px;font-weight:650;color:#315b4b}.subtle{font-size:12px;color:#758179;line-height:1.5;margin-top:25px}dialog{border:0;border-radius:18px;padding:0;max-width:calc(100vw - 30px);width:420px;box-shadow:0 20px 80px #0004}dialog::backdrop{background:#08140f80}.modal{padding:22px}.modal h3{margin:0 0 15px}.modal label{display:block;font-size:13px;font-weight:700;margin:12px 0 5px}.modal input{width:100%;padding:12px;border:1px solid #ccd9ce;border-radius:10px;font-size:16px}.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}.snack{position:fixed;left:50%;bottom:19px;transform:translateX(-50%);background:#173f39;color:white;border-radius:15px;min-width:min(94vw,380px);padding:11px 14px;display:none;align-items:center;justify-content:space-between;gap:10px;z-index:2;font-size:13px}.snack button{color:#b9f5d2;border:0;background:transparent;font-weight:750;font-size:14px}.tabs{display:flex;gap:6px;background:#eef2ec;padding:5px;border-radius:13px;margin:18px 0}.tabs button{border:none;border-radius:10px;background:transparent;padding:10px;font-size:14px;flex:1;color:#586b5e;font-weight:700}.tabs button.active{background:white;color:#1b5d46;box-shadow:0 1px 5px #0001}.receipt-box{border:1px solid #dbe5dd;background:#f4f8f3;border-radius:18px;padding:16px;margin:18px 0}.receipt-box h2{font-size:17px;margin:0 0 5px}.receipt-box p{font-size:12px;color:#65776d;line-height:1.5;margin:4px 0 12px}.receipt-buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px}.receipt-button{border:1px solid #cddbd1;background:#fff;color:#1f6049;min-height:58px;border-radius:14px;font-size:14px;font-weight:750;padding:9px;display:flex;align-items:center;gap:8px;justify-content:center}.receipt-button svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}.receipt-button{cursor:pointer}.receipt-button:focus-visible{outline:3px solid #f3bf70}.receipt-input{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}.receipt-list{display:grid;gap:10px;margin:13px 0 0}.receipt{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #dce6dc;padding:10px;border-radius:13px}.receipt-image{width:60px;height:62px;border-radius:9px;object-fit:cover;background:#e6ece5;flex:none}.receipt-info{flex:1;min-width:0}.receipt-info strong{font-size:13px;display:block;word-break:break-word}.receipt-info small{display:block;font-size:11px;color:#6c7a70;margin-top:4px}.receipt .icon-btn{flex:none}.receipt-preview{margin-top:12px;padding:12px;background:white;border:1px solid #dce6dc;border-radius:12px}.pdf-thumb{display:grid;place-items:center;font-size:15px;font-weight:800;color:#206249;border:1px solid #ccdccc}.receipt-preview a{display:inline-block;padding:8px 0;color:#156244;font-weight:700}.receipt-preview img{width:100%;max-height:320px;object-fit:contain;border-radius:9px}.receipt-preview p{margin:8px 0 0}.receipt-preview .toolbar{margin:10px 0 0}.receipt-note{margin-top:9px!important}.archived{display:none}.archived.show{display:block}@media(max-width:380px){.app{padding-left:12px;padding-right:12px}.top{margin:0 -12px}.form{gap:5px}.primary{padding-left:11px;padding-right:11px}.item{gap:5px}.icon-btn{width:33px}}
+
+.expense-panel{display:none}.expense-panel.show{display:block}.purchase-form{display:grid;gap:10px;background:#f0f5ef;border:1px solid #d9e6db;border-radius:17px;padding:15px}.purchase-form label{font-size:13px;font-weight:700;color:#365848;display:grid;gap:5px}.purchase-form input{width:100%;border:1px solid #cbdaca;background:#fff;padding:11px 12px;border-radius:10px;min-height:43px;font-size:16px}.field-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}.expense-summary{background:#173f39;color:white;padding:16px 18px;border-radius:17px;margin:13px 0}.expense-summary strong{font-size:28px;display:block}.expense-summary small{color:#cfe5d8}.report-list{display:grid;gap:7px;margin:10px 0}.report-entry{padding:10px 12px;background:white;border:1px solid #e0e8df;border-radius:11px;display:flex;justify-content:space-between;gap:9px;align-items:center}.report-entry span{display:block;font-size:12px;color:#617067;margin-top:3px}.report-entry button{border:0;background:#f4e9e5;color:#8f443a;padding:7px;border-radius:8px}.report-total{font-weight:750;white-space:nowrap}.report-panel{border:1px solid #d9e5d9;padding:14px;border-radius:15px;margin-top:15px}.report-panel h3{font-size:15px;margin:0 0 10px}.report-row{display:flex;justify-content:space-between;padding:7px 2px;border-bottom:1px solid #e4ece4;font-size:13px}.report-row:last-child{border-bottom:0}.expenses-note{font-size:12px;color:#64786a;line-height:1.6}.backup-box{margin:22px 0;border:1px dashed #bbcdbd;padding:15px;border-radius:15px}.backup-actions{display:flex;flex-wrap:wrap;gap:8px}.backup-file{max-width:100%;font-size:13px}.only-print{display:none}@media(max-width:420px){.field-pair{grid-template-columns:1fr}}@media print{body{background:#fff;color:#111}.top,.notice,.receipt-box,.tabs,#main-active,#main-archive,.purchase-form,.backup-box,.expense-tools,.subtle,.expense-actions{display:none!important}.app{max-width:unset;padding:0;background:white}.expense-panel{display:block!important}.only-print{display:block}#report-month-head{display:block!important}.expense-summary{background:white;color:#111;border:1px solid #333}.expense-summary small{color:#333}.report-panel{break-inside:avoid}.report-entry button{display:none}.report-list .report-entry{break-inside:avoid}}
+
+/* Personalización visual DEL HOGAR: solo afecta a la cabecera. */
+.cheerful-header{background:linear-gradient(145deg,#fff4c9 0%,#ffe2bd 48%,#d8f3e7 100%);color:#234b3d;padding:17px 18px 22px;overflow:hidden;border-radius:0 0 28px 28px}
+.owners-heading{text-align:center;position:relative;z-index:2}
+.owners-intro{font-size:10px;letter-spacing:.22em;font-weight:850;color:#457469}
+.owners-name{display:flex;justify-content:center;align-items:baseline;gap:10px;flex-wrap:wrap;font-size:clamp(27px,8vw,42px);font-weight:900;letter-spacing:-1.3px;line-height:1.2;margin:6px 0 13px}
+.owners-name>span:not(.owners-amp){background:linear-gradient(105deg,#ee686b 0%,#db6fbb 35%,#695ebc 65%,#159d91 100%);background-size:220% 100%;color:#963b65;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:name-shimmer 6s ease-in-out infinite alternate, float-name 3.5s ease-in-out infinite}
+.owners-name>span:last-child{animation-delay:-1.5s}
+.owners-amp{font-style:italic;font-weight:600;font-size:.6em;color:#ce736f;transform:rotate(-8deg)}
+@keyframes name-shimmer{from{background-position:0% 50%}to{background-position:100% 50%}}
+@keyframes float-name{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+.cover-art{height:154px;border-radius:22px;background:radial-gradient(circle at 80% 20%,#fff6bd 0 14%,transparent 15%),linear-gradient(130deg,#ffafbc 0%,#ffcd82 37%,#b2e5ce 74%,#92d9d6 100%);position:relative;overflow:hidden;box-shadow:inset 0 2px 15px #fff8,0 5px 16px #df9c7a38}
+.cover-art::before,.cover-art::after{content:"";position:absolute;border:2px solid #ffffff7a;border-radius:50%;width:170px;height:170px;left:-65px;top:24px}.cover-art::after{width:140px;height:140px;left:auto;right:-50px;top:-60px}
+.sun{position:absolute;right:22%;top:16px;border-radius:50%;width:56px;height:56px;background:#fff5a0;box-shadow:0 0 0 10px #fff7b044;animation:soft-glow 5s ease-in-out infinite alternate}
+@keyframes soft-glow{to{transform:scale(1.08)}}
+.cover-emoji{position:absolute;font-size:42px;filter:drop-shadow(0 4px 2px #744d3b24)}.cover-emoji.fruit{left:7%;top:27px;transform:rotate(-15deg)}.cover-emoji.bread{left:31%;top:17px;transform:rotate(18deg)}.cover-emoji.leaves{right:7%;top:32px;transform:rotate(-15deg)}.cover-emoji.basket{right:34%;top:44px;transform:rotate(7deg)}
+.cover-caption{position:absolute;bottom:0;left:0;right:0;text-align:center;padding:8px 8px 10px;background:#ffffffbf;color:#385e50;font-size:12px;font-weight:800}
+.cover-bottom{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:15px}.cheerful-header .eyebrow{color:#597265;opacity:1}.cheerful-header h1{font-size:25px;margin:3px 0 0}.cheerful-header p{margin:5px 0 0;color:#61776d;font-size:13px}.cheerful-header .bag{background:#fff9f2;border-color:#ffffff;width:47px;height:47px}
+@media(prefers-reduced-motion:reduce){.owners-name>span:not(.owners-amp),.sun{animation:none}}
+@media(max-width:380px){.cheerful-header{padding:13px 12px 17px}.cover-art{height:128px}.cover-emoji{font-size:34px}.owners-name{margin-bottom:9px;gap:7px}.cover-bottom{margin-top:11px}}
+
+/* v0.5.2 · Tiendas, Maps y asociación de supermercado */
+.store-panel{border:1px solid #eddab8;background:linear-gradient(125deg,#fff9e5,#f3fff2);border-radius:18px;padding:15px;margin:16px 0}
+.store-panel h2{margin:0 0 7px;font-size:18px}.store-panel p{margin:0 0 12px;font-size:12px;color:#5b6d5e;line-height:1.5}
+.store-control{display:flex;gap:9px;align-items:stretch}.store-control select,.purchase-form select,.receipt-box select,.purchase-form .other-shop{border:1px solid #cbdaca;background:white;border-radius:11px;padding:12px;min-height:45px;font-size:16px;color:#254839}
+.store-control select{flex:1;min-width:0}.store-control button{min-width:130px}.store-panel .help{margin:10px 0 0;color:#61746a}
+.receipt-store-label{display:grid;gap:7px;font-weight:700;color:#375748;font-size:13px;margin:12px 0}
+.receipt-store-label select{width:100%;font-weight:400}
+.purchase-form select{width:100%}
+@media(max-width:410px){.store-control{flex-wrap:wrap}.store-control button{width:100%}.store-control select{width:100%}}
+@media print{.store-panel{display:none!important}}
+
+/* Acceso directo a edición desde la lista; la zona vacía también es interactiva. */
+.name-edit{display:block;flex:1;min-width:0;text-align:left;border:0;background:transparent;color:inherit;padding:8px 4px;border-radius:10px;cursor:pointer}
+.name-edit:focus-visible,.empty-action:focus-visible{outline:3px solid #f3bf70;outline-offset:2px}
+.name-edit strong{display:block;font-size:16px;font-weight:670}
+.name-edit small{display:block;font-size:12px;color:#7a8c80;margin-top:3px}
+.bought .name-edit strong{color:#437e63;text-decoration:line-through}
+.empty-action{display:flex;flex-direction:column;align-items:center;gap:8px;width:100%;text-align:center;border:2px dashed #9dbfaa;background:#f0f9f1;color:#225f45;padding:25px 12px;border-radius:18px;cursor:pointer;font-size:16px}
+.empty-action strong{font-size:19px}.empty-action span{font-size:13px}
+.list-instruction{background:#eaf6f0;border-radius:12px;color:#285b45;font-size:13px;padding:10px 12px;margin:6px 0 12px}
+#go-add{margin:5px 0 0}
+
+/* Consulta nutricional opcional v0.5.4 */
+#product-options,#nutrition-modal{border:0;border-radius:20px;box-shadow:0 15px 55px rgba(0,0,0,.24);width:min(94vw,480px);max-height:88dvh;overflow:auto;padding:0;color:#254637;background:#fff}
+#product-options::backdrop,#nutrition-modal::backdrop{background:#10291ca8}
+.nutri-modal-inner{padding:22px;display:grid;gap:13px}
+.nutri-modal-inner h3{margin:0;font-size:21px}
+.nutri-modal-inner p{margin:0;font-size:13px;line-height:1.5;color:#5d7666}
+.nutri-dialog-actions{display:flex;flex-wrap:wrap;gap:8px}
+.nutri-dialog-actions button{flex:1;min-height:44px}
+.nutri-search-box{display:flex;gap:7px;flex-wrap:wrap}
+.nutri-search-box input{flex:1;min-width:170px;border-radius:11px;border:1px solid #bdd2c2;padding:11px;font-size:16px}
+.nutri-search-box button{min-height:44px}
+.nutri-result{border:1px solid #d5e4d4;border-radius:12px;padding:11px;display:grid;gap:4px;margin-bottom:7px;background:#fbfffb;cursor:pointer;width:100%;text-align:left;color:#254637}
+.nutri-result span{font-size:12px;color:#667c69}
+.nutri-rows{display:grid;grid-template-columns:1fr auto;gap:6px 14px;align-items:center;border:1px solid #dce9d9;padding:12px;border-radius:12px}
+.nutri-rows .nutri-label{font-size:13px}.nutri-rows b{font-size:14px;text-align:right}
+.nutri-status{padding:10px;background:#f0f7f0;border-radius:10px}
+.nutri-source{font-size:12px}
+@media print{#product-options,#nutrition-modal{display:none!important}}
+</style>
+<style>
+/* Indicadores claramente diferenciados: Nutri-Score comprobado vs. grupo alimentario orientativo */
+.food-grade{display:inline-flex;align-items:center;justify-content:center;flex:0 0 27px;width:27px;height:27px;border-radius:50%;font-weight:850;font-size:12px;border:2px solid #fff;box-shadow:0 0 0 1px #b8cbbd;margin-right:5px}
+.food-grade.n-a{background:#087f45;color:#fff}.food-grade.n-b{background:#76b849;color:#143119}
+.food-grade.n-c{background:#ffe16b;color:#503700}.food-grade.n-d{background:#f3a13b;color:#4a2300}.food-grade.n-e{background:#e05745;color:#fff}
+.food-grade.generic{background:#eaf2fb;color:#245177;border:1px dashed #7195ba;box-shadow:none}
+.food-grade.unknown{background:#eee;color:#555;box-shadow:none}
+.food-advice{padding:12px;border-radius:12px;background:#eef6ff;border:1px solid #cee0f1;line-height:1.5;font-size:13px}
+.food-advice strong{display:block;margin-bottom:5px}
+.food-ingredients{padding:11px;background:#f9faf6;border:1px solid #d9e4d5;border-radius:12px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.food-legend{font-size:12px;line-height:1.5;color:#485c51;padding:9px;background:#f6f8f2;border-radius:10px;margin:8px 0}
+</style>
+<style>
+.purchase-lines{border:1px solid #c8daca;background:#fff;border-radius:13px;padding:11px;display:grid;gap:10px}
+.purchase-lines h3{font-size:14px;margin:0}
+.purchase-line{display:grid;grid-template-columns:minmax(0,2fr) 70px minmax(0,1fr) 35px;gap:6px;align-items:end;padding:7px 0;border-bottom:1px solid #e5eee6}
+.purchase-line label{font-size:11px!important;min-width:0}
+.purchase-line input{min-width:0;width:100%;padding:9px 6px;font-size:14px}
+.purchase-line .line-delete{border:0;border-radius:9px;min-height:40px;background:#f6e6e0;color:#913e2a}
+.purchase-sum{font-size:13px;background:#eaf4ec;padding:10px;border-radius:10px}
+.purchase-mismatch{color:#942f26;background:#fff0e8}
+.purchase-entry-lines{font-size:12px;color:#335b48;white-space:pre-wrap;margin-top:7px}
+@media(max-width:400px){.purchase-line{grid-template-columns:minmax(0,1.5fr) 54px 86px 30px;gap:4px}.purchase-line input{font-size:13px}}
+</style><style>
+.list-mode-bar{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:4px 0 10px}
+.mode-button{border:1px solid #bfcfc6;background:#f3f7f2;padding:13px 7px;border-radius:13px;min-height:48px;font-size:14px;color:#214b3d;font-weight:750}
+.mode-button.current{background:#176248;color:#fff;border-color:#176248;box-shadow:0 2px 8px #17624828}
+.mode-help{background:#edf7f1;border-radius:12px;padding:10px 12px;margin:0 0 12px;font-size:13px;line-height:1.45;color:#315a45}
+#shopping-toolbar[hidden]{display:none!important}
+@media(max-width:600px){.cover-art{display:none!important}.owners-heading{padding:8px 0!important}.owners-intro{font-size:9px!important}.owners-name{font-size:clamp(22px,7vw,34px)!important}.cover-bottom{padding:6px 0!important}.cover-bottom p,.cover-bottom .bag{display:none!important}.top{padding-top:9px!important;padding-bottom:8px!important}.notice{font-size:12px;line-height:1.4;padding:8px 10px}.tabs{position:sticky;top:0;z-index:15;background:#f5f7f3;padding:6px 0}.tabs button{font-size:13px;padding:12px 5px}}
+.item.in-cart{border-color:#edbe76;background:#fff9ed}.item.in-cart .name-edit small{color:#8c5c16}#shopping-toolbar{display:flex;flex-wrap:wrap;gap:8px}#shopping-toolbar button{flex:1 1 175px}
+</style><style>
+/* v0.6.6 Navegación inequívoca para casa, tienda, compras y estadísticas */
+.top.cheerful-header{padding:11px 16px 13px;border-radius:0 0 18px 18px}
+.owners-name{font-size:clamp(23px,7vw,32px);margin:3px 0 7px;gap:7px}
+.owners-intro{font-size:9px}
+.cover-art{height:60px;border-radius:13px;box-shadow:none}
+.cover-emoji{font-size:22px!important;top:8px!important}.cover-emoji.basket{top:10px!important}
+.cover-caption{padding:3px 4px;font-size:10px}.sun{width:25px;height:25px;top:7px}
+.cover-bottom{margin-top:7px}.cheerful-header h1{font-size:18px}.cheerful-header .bag{height:32px;width:32px;font-size:19px}.cheerful-header p{font-size:11px}
+.app>.notice{margin:9px 0 4px;padding:7px 10px;font-size:11px}
+.tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:11px 0 13px;background:transparent;padding:0}
+.tabs button{min-width:0;min-height:58px;background:#edf4ed;border:1px solid #d5e5d9;border-radius:14px;padding:9px 5px;font-size:13px;white-space:normal;line-height:1.3;color:#255d4b}
+.tabs button.active{background:#1d7156;color:white;border-color:#1d7156;box-shadow:0 3px 8px #235e4930}
+.tabs button:focus-visible{outline:3px solid #e6a447;outline-offset:2px}
+.list-mode-bar[hidden],.mode-help[hidden],#shop-status[hidden],#stats-view[hidden],#transaction-view[hidden]{display:none!important}
+.view-heading{background:#f1f8f2;border-radius:15px;padding:12px 13px;margin:12px 0}
+.view-heading h2{font-size:20px;margin:0 0 4px}.view-heading p{margin:0;font-size:13px;color:#507262;line-height:1.5}
+.shop-status{background:#fff4dc;border:1px solid #f1da98;color:#795621;padding:11px 12px;border-radius:13px;font-size:13px;line-height:1.55}
+#shopping-toolbar[hidden]{display:none!important}
+#shopping-toolbar:not([hidden]){display:flex;flex-direction:column;margin:10px 0}
+#shopping-toolbar button{width:100%;text-align:left;min-height:48px}
+#transaction-view>.receipt-box{margin-top:12px}
+#stats-view>button{margin:0 0 12px}
+#main-archive{padding-top:8px}
+@media(max-width:340px){.tabs button{font-size:12px}}
+</style><style>
+.purchase-line.adjustment{background:#fff6ea;border-left:4px solid #ca7c25}
+.purchase-line .line-subtotal-hint{font-size:12px;color:#556455}
+</style>
+<link rel="manifest" href="./manifest.webmanifest" />
+<link rel="icon" sizes="192x192" type="image/png" href="./icons/family-192.png" />
+<link rel="apple-touch-icon" href="./icons/family-192.png" />
+<meta name="application-name" content="Compra Familiar" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="Compra Familiar" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<style>
+.cf-stage-warning{background:#fff0d2;border:2px solid #cd8d29;padding:12px;border-radius:12px;margin:12px 0;color:#57380e;line-height:1.45;font-size:13px}
+.cf-cloud-wrap{margin:14px 0;background:#eff8f3;border:2px solid #93bba8;border-radius:15px;padding:12px}.cf-cloud-wrap summary{cursor:pointer;font-size:15px;font-weight:800;color:#205543}.cf-cloud-panel{margin-top:12px}.cf-cloud-panel p{font-size:13px;line-height:1.5}.cf-cloud-user{display:flex;justify-content:space-between;align-items:center;gap:10px}.cf-cloud-user span{font-size:13px;overflow-wrap:anywhere}.cf-cloud-error{color:#a12424;font-size:13px;min-height:20px}.cf-cloud-item{border:1px solid #c4dcd0;padding:9px;border-radius:9px;background:white;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.cf-cloud-item span{flex:1;min-width:100px;overflow-wrap:anywhere}.cf-local-audit{margin-top:18px;border-top:1px solid #b4cabb;padding-top:12px}.cf-local-audit #cf-compare-output{white-space:pre-wrap;font-size:12px;line-height:1.5;margin-top:8px;overflow-wrap:anywhere}
+</style>
+<style id="cf-a11y-v0102">
+/* v0.14.5 accesibilidad movil: objetivos tactiles >=44px, contraste de textos secundarios >=4.5:1, sin fuentes <11px. Solo CSS aditivo. */
+button,select,summary,input[type=month],input[type=date],input[type=number]{min-height:44px}
+summary{display:flex;align-items:center}
+.subtle,.receipt-note,.receipt-box p,.store-panel p,.help,.expenses-note,.expenses-note b,.view-heading p,.section-head small,.name small,.name-edit small,.receipt-info small,#receipt-count,.receipt-list p{color:#4a5a51}
+.owners-intro,.receipt-info small{font-size:12px}
+.owners-amp{color:#a8443f}
+.cf-dlg{border:0;border-radius:16px;padding:0;width:min(420px,calc(100vw - 32px));box-shadow:0 12px 40px rgba(0,0,0,.35);color:#1c302b;background:#fff}
+.cf-dlg::backdrop{background:rgba(20,35,30,.55)}
+.cf-dlg form{padding:20px 18px;display:grid;gap:12px;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow:auto}
+.cf-dlg h2{font-size:1.1rem;margin:0}
+.cf-dlg p{margin:0}
+.cf-dlg label{display:grid;gap:4px;font-weight:700}
+.cf-dlg input,.cf-dlg select{font-size:16px;min-height:44px;padding:10px 12px;border:1px solid #6c7a70;border-radius:10px;background:#fff;color:#1c302b}
+.cf-dlg-err{color:#8f1d1d;background:#fdecec;padding:8px 10px;border-radius:8px;font-weight:700}
+.cf-dlg-actions{display:flex;gap:10px;flex-wrap:wrap}
+.cf-dlg-actions button{flex:1 1 40%;min-height:44px;padding:10px 14px;border-radius:12px;font-weight:700;border:1px solid #173f39;background:#fff;color:#173f39}
+.cf-dlg-actions button[type=submit]{background:#173f39;color:#fff}
+.cf-dlg :focus-visible{outline:3px solid #f3bf70;outline-offset:2px}.cf-pur{margin-top:16px;border-top:2px solid #ddd;padding-top:12px}.cf-pur label{display:block;margin:6px 0}.cf-pur input{min-height:44px;width:100%;box-sizing:border-box}.cf-pur button{min-height:44px;margin:4px 4px 4px 0}.cf-pur-line{border:1px solid #ccc;border-radius:8px;padding:8px;margin:8px 0}.cf-pur-row{padding:4px 0}.cf-pur-total-row{font-weight:700;font-size:1.1em}.cf-pur-h{font-weight:700;margin-top:8px}.cf-pur-item{border-bottom:1px solid #ddd;padding:8px 0}.cf-pur-item.void{opacity:.6;text-decoration:line-through}.cf-pur-item.void button{display:none}</style><style id="cf-family">
+.fam{max-width:760px;margin:0 auto;padding:12px 14px 40px}.fam-header{padding:10px 0}.fam-brand{font-size:26px;font-weight:800;color:#173f39}.fam-sub{color:#4a5f58;margin-top:4px}.fam-badge{display:inline-block;background:#dff1e6;color:#173f39;border-radius:999px;padding:2px 10px;font-size:13px;font-weight:700}
+.fam-lead{background:#f0f5ef;border:1px solid #d9e6db;border-radius:12px;padding:10px 12px;line-height:1.45}.fam-card{background:#fff;border:1px solid #d9e6db;border-radius:12px;padding:14px;margin:12px 0}.fam-notice{color:#725208;background:#fff4d6;padding:10px;border-radius:8px}
+.fam-tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:12px 0}.fam-tabs button{min-height:48px;border:1px solid #173f39;border-radius:12px;background:#fff;color:#173f39;font-weight:700;padding:6px 4px;font-size:14px}.fam-tabs button[aria-selected=true]{background:#173f39;color:#fff}.fam-pay{width:100%;min-height:52px;font-size:16px;margin:10px 0 4px}.fam-note{font-size:13px;line-height:1.4;margin:4px 0 10px}.fam-tools{margin:16px 0;border:1px solid #d9e6db;border-radius:12px;padding:4px 12px;background:#fff}.fam-tools>summary{min-height:44px;display:flex;align-items:center;font-weight:700;cursor:pointer}.fam-tools button{min-height:44px;margin:6px 6px 6px 0;max-width:100%;white-space:normal;box-sizing:border-box}.fam-tools .fam-danger{border-color:#a40000;color:#7a0000}.cf-store-item[data-state=coger]{border-left:5px solid #9aa7a2;padding-left:8px}.cf-store-item[data-state=carro]{border-left:5px solid #cd8d29;padding-left:8px}.cf-store-item[data-state=pagado]{border-left:5px solid #2f7d4f;padding-left:8px}#cf-cart-clear{min-height:44px;margin:4px 0 8px;max-width:100%;white-space:normal;border-color:#a40000;color:#7a0000}.fam-tabs button{overflow-wrap:anywhere}@media(max-width:420px){.fam-tabs{gap:4px}.fam-tabs button{font-size:12.5px;padding:6px 2px}}
+.fam section[role=tabpanel],.fam div[role=tabpanel]{margin:8px 0}.fam h2{font-size:20px;margin:6px 0}.cf-store-item{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid #ddd}.cf-store-item span{flex:1 1 100%}.cf-store-item button{min-height:44px}
+.fam-legacy{margin-top:28px;border:2px dashed #cd8d29;border-radius:12px;padding:8px 12px;background:#fffaf0}.fam-legacy>summary{font-weight:700;min-height:44px;display:flex;align-items:center;cursor:pointer}.fam-legacy-note{background:#fff0d2;border-radius:8px;padding:10px;color:#57380e;line-height:1.45}
+.fam-foot{margin-top:24px;font-size:12px;color:#4a5f58;text-align:center}<style id="cf-family-v15">
+/* v0.15.0 rediseno: estetica de la aplicacion antigua (cabecera Hogar de ejemplo, botones 2x2, tarjetas verdes) sobre las funciones compartidas actuales. Solo CSS/estructura. */
+body{background:#f5f7f3}
+.fam-hero{margin:0 -14px;border-radius:0 0 28px 28px;padding:14px 16px 16px;text-align:center}
+.fam-hero .owners-intro{font-size:12px!important;letter-spacing:.2em}
+.fam-hero .owners-name{font-size:clamp(30px,10vw,44px)!important;margin:4px 0 6px!important}
+.fam-hero .fam-strip{font-size:26px;letter-spacing:10px;margin:2px 0 6px}
+.fam-hero .fam-sub{color:#3f5f52;font-size:14px;margin-top:2px}
+.fam-hero .fam-tag{margin:6px 0 0;color:#3f5f52;font-size:13px;line-height:1.4}
+.fam-tabs{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0}
+.fam-tabs button{min-height:78px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:2px solid #bfdccb;border-radius:18px;background:linear-gradient(160deg,#f3faf5,#e1f2e8);color:#17543f;font-size:17px;font-weight:800;padding:8px 6px;box-shadow:0 2px 8px #1b5b4512;line-height:1.2}
+.fam-tabs button small{display:block;font-size:12px;font-weight:600;color:#456b57}
+.fam-tabs button[aria-selected=true]{background:linear-gradient(160deg,#2b8a67,#1d6f52);border-color:#1d6f52;color:#fff;box-shadow:0 4px 12px #1d6f5240}
+.fam-tabs button[aria-selected=true] small{color:#e2f6ea}
+@media(max-width:420px){.fam-tabs{gap:8px}.fam-tabs button{font-size:15.5px;min-height:72px;padding:6px 4px}}
+.fam-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0}
+.fam-stats[hidden]{display:none}
+.fam-stat{background:#e6f4ec;border:1px solid #bfdccb;border-radius:16px;padding:10px 6px;text-align:center}
+.fam-stat strong{display:block;font-size:26px;color:#1d6f52;line-height:1.1}.fam-stat span{font-size:12px;color:#3f5f52}
+.fam-stat:nth-child(2){background:#fff4dd;border-color:#efd69b}.fam-stat:nth-child(2) strong{color:#8f560b}
+.fam-stat:nth-child(3){background:#dcf1e4;border-color:#a9d3b8}
+.fam-add{background:#e6f4ec;border:2px solid #a9d3b8;border-radius:20px;padding:12px;margin:12px 0;gap:10px;flex-wrap:nowrap}
+.fam-add input{min-height:54px;font-size:17px;border-radius:14px}
+.fam-add .primary{min-height:54px;font-size:17px;border-radius:14px;padding:0 16px}
+.fam section[role=tabpanel]>h2,#cf-pur-compras>h2,#cf-pur-informes>h2{background:#e6f4ec;border-radius:14px;padding:10px 12px;font-size:21px}
+.fam .cf-cloud-item{border-radius:16px;padding:12px;background:#fff;border:1px solid #cfe4d6;border-left:5px solid #9aa7a2;box-shadow:0 3px 10px #0a261008;margin:8px 0}
+.fam .cf-cloud-item[data-state=carro]{border-left-color:#cd8d29;background:#fffaf0}
+.fam .cf-cloud-item[data-state=pagado]{border-left-color:#2f7d4f;background:#f0f8f2}
+.fam .cf-cloud-item>span:first-child{flex:1 1 100%;font-size:16px;font-weight:700;color:#1c302b}
+.fam .cf-cloud-item small{flex:1 1 100%;color:#4a5f58;font-size:12px}
+.fam .cf-cloud-item button,.fam .cf-store-item button{min-height:46px;border-radius:12px;padding:8px 14px;border:1px solid #bfdccb;background:#fff;color:#17543f;font-weight:700}
+.fam .cf-cloud-item button.fam-danger{border-color:#a40000;color:#7a0000}
+.fam-maint{margin-top:30px;border:1px dashed #b8c9bf;border-radius:14px;padding:6px 12px;background:#fafcfa}
+.fam-maint>summary{min-height:44px;display:flex;align-items:center;font-weight:700;color:#4a5f58;cursor:pointer}
+.fam-maps{background:linear-gradient(125deg,#fff9e5,#eaf6ee);border:2px solid #cfe4d6;border-radius:18px;padding:12px;margin:12px 0}.fam-maps h3{margin:0 0 4px;font-size:18px}.fam-maps label{display:grid;gap:4px;font-weight:700;font-size:13px;margin:8px 0}.fam-maps[hidden],.fam-maps label[hidden]{display:none}.fam-maps select,.fam-maps input{min-height:48px;font-size:16px;border:1px solid #9fbfae;border-radius:12px;padding:8px 10px;background:#fff;width:100%;color:#1c302b}.fam-maps .primary{width:100%;min-height:52px;font-size:16px;margin-top:4px}
+.fam-lock-note{background:#fff4dd;border:1px solid #efd69b;border-radius:12px;padding:10px 12px;margin:8px 0;font-weight:600;line-height:1.4;color:#6b4a0a}.fam-lock-note[hidden]{display:none}#fam-root button:disabled,#fam-root summary+* button:disabled{opacity:.42;cursor:not-allowed}.cf-cloud-item button:disabled,.cf-store-item button:disabled,.fam-tools button:disabled,.fam-add button:disabled{pointer-events:none}
+#cf-cloud-error{margin:8px 0}#cf-cloud-error:empty{display:none}#cf-cloud-error:not(:empty){position:sticky;top:8px;z-index:30;box-shadow:0 4px 14px #0003;background:#fdecec;border:1px solid #e3a3a3;border-radius:12px;padding:10px 12px;font-weight:600;line-height:1.4}
+</style></head><body>
+<main class="fam" id="fam-root">
+<header class="fam-hero cheerful-header"><div class="owners-heading"><span class="owners-intro">NUESTRA LISTA DE CASA</span><div class="owners-name" aria-label="Hogar de ejemplo"><span>Usuario 1</span><span class="owners-amp">y</span><span>Usuario 2</span></div></div><div class="fam-strip" aria-hidden="true">🍎 🥖 🌼 🛍️</div><div class="fam-sub"><span id="fam-home">Hogar compartido</span> · <span class="fam-badge">Datos compartidos</span></div><p class="fam-tag">Lo que apunta o marca una persona lo ve la otra.</p></header>
+<div id="cf-cloud-login" class="fam-card"><p>Entra con tu cuenta de Google para ver la lista y las compras de la familia.</p><button class="primary" type="button" id="cf-google-login">Entrar con Google</button> <button class="secondary" type="button" id="cf-open-chrome" hidden>Abrir en Chrome</button><p id="cf-auth-diag" class="fam-notice" role="status" hidden></p></div>
+<p id="cf-cloud-notice" role="status" aria-live="polite" class="fam-notice" hidden></p>
+<button type="button" id="cf-cloud-retry" class="secondary">Reintentar conexión</button>
+<p id="cf-cloud-error" class="cf-cloud-error" aria-live="assertive" role="alert"></p>
+<div id="cf-cloud-app" hidden>
+<div class="cf-cloud-user"><span id="cf-cloud-identity">Sesión iniciada</span><button type="button" class="secondary" id="cf-cloud-logout">Cerrar sesión</button></div>
+<div id="cf-cloud-status" role="status" aria-live="polite">Esperando consulta</div>
+<p id="cf-lock-note" class="fam-lock-note" role="status" hidden></p>
+<div class="fam-tabs" role="tablist" aria-label="Secciones de la familia">
+<button type="button" role="tab" id="fam-tab-lista" data-fam-tab="lista" aria-selected="true" aria-controls="fam-lista">🏠 Falta en casa<small id="fam-n-lista"> </small></button>
+<button type="button" role="tab" id="fam-tab-tienda" data-fam-tab="tienda" aria-selected="false" aria-controls="fam-tienda">🛒 En la tienda<small id="fam-n-tienda"> </small></button>
+<button type="button" role="tab" id="fam-tab-compras" data-fam-tab="compras" aria-selected="false" aria-controls="cf-pur">🧾 Caja y tickets<small>Ticket y compras</small></button>
+<button type="button" role="tab" id="fam-tab-informes" data-fam-tab="informes" aria-selected="false" aria-controls="cf-pur">📊 Informes y copias<small>Mes y copias</small></button>
+</div>
+<section id="fam-lista" role="tabpanel" aria-labelledby="fam-tab-lista"><h2>🏠 Falta en casa</h2><p>Apunta lo que falta o hay que comprar. La ve la otra persona. Al llegar a la tienda, sigue en «En la tienda».</p>
+<div class="fam-stats" id="fam-stats"><div class="fam-stat"><strong id="fam-stat-coger">0</strong><span>Por coger</span></div><div class="fam-stat"><strong id="fam-stat-carro">0</strong><span>En el carro</span></div><div class="fam-stat"><strong id="fam-stat-pagado">0</strong><span>Pagados</span></div></div>
+<div id="cf-archive-slot"></div><p id="cf-archive-note" class="fam-note" hidden>Estás viendo los artículos archivados. «Restaurar» los devuelve a «Falta en casa» como «Por coger». Archivar no borra nada.<span id="cf-archive-nodel"> La eliminación definitiva todavía no está activada en esta versión.</span></p>
+<div class="form fam-add"><input id="cf-cloud-name" placeholder="Qué falta (ej. leche)" maxlength="160" autocomplete="off" aria-label="Qué falta"><button class="primary" type="button" id="cf-cloud-add">+ Apuntar</button></div>
+<button type="button" id="cf-cloud-refresh" class="secondary">Actualizar lista</button>
+<div id="cf-cloud-items" class="list" aria-live="polite"></div>
+<details class="fam-tools" id="cf-tools-lista"><summary>Limpiar «Falta en casa»</summary><p class="fam-note">«Archivar» no borra nada: los artículos pasan a «Archivados» y se recuperan con «Ver archivados» y «Restaurar» (vuelven como «Por coger»). No toca compras ni tickets.</p><button type="button" class="secondary fam-danger" id="cf-bulk-archive-pending">Archivar todo lo pendiente</button></details>
+<details class="fam-tools" id="cf-tools-archivo" hidden><summary>Vaciar archivados</summary><p class="fam-note">Elimina para siempre los artículos archivados (para las dos personas). No cambia compras ni tickets. Pide confirmación escrita.</p><button type="button" class="secondary fam-danger" id="cf-bulk-delete-archived">Eliminar todos los archivados</button></details></section>
+<section id="fam-tienda" role="tabpanel" aria-labelledby="fam-tab-tienda" hidden><h2>🛒 En la tienda</h2><p>Marca lo que vas cogiendo y lo que ya has pagado: lo ve la otra persona al momento de actualizar. Cuando hayas pagado, registra el gasto en «Caja y tickets».</p>
+<div class="fam-maps" id="cf-maps"><h3>📍 Buscar tienda</h3><p class="fam-note">Elige el supermercado y abre su búsqueda en Google Maps (tiendas cercanas).</p><label>Supermercado<select id="cf-maps-store" aria-label="Elige supermercado"><option value="">Elige uno…</option><option>ALDI</option><option>Mercadona</option><option>Carrefour</option><option>Alcampo</option><option>Lidl</option><option value="__otra">Otra tienda…</option></select></label><label id="cf-maps-other-wrap" hidden>Nombre de la tienda<input id="cf-maps-other" maxlength="60" autocomplete="off" placeholder="Ej. Dia, Eroski…"></label><button type="button" class="primary" id="cf-maps-open">📍 Buscar en Google Maps</button><p class="fam-note" id="cf-maps-help" role="status">Google Maps usa su propia ubicación si le das permiso. Esta app no la guarda.</p></div>
+<button type="button" class="primary fam-pay" id="cf-pay-go">🧾 Ya he pagado: registrar el ticket</button><p class="fam-note" id="cf-pay-note">Solo abre «Caja y tickets». No registra ninguna compra por sí solo.</p>
+<div id="cf-store-items" class="list" aria-live="polite"></div>
+<details class="fam-tools" id="cf-tools-tienda"><summary>Limpiar «En la tienda»</summary><p class="fam-note">Son cambios reversibles sobre la lista: no borran artículos, no registran gastos y no tocan compras ni tickets.</p><button type="button" class="secondary" id="cf-bulk-uncart">Vaciar carro</button> <button type="button" class="secondary fam-danger" id="cf-bulk-archive-paid">Archivar los pagados</button></details></section>
+<section id="cf-pur" class="cf-pur" aria-label="Compras e informes de la familia" hidden>
+<p id="cf-pur-offline" role="status" class="cf-cloud-error" hidden>Sin conexión: el historial se muestra como copia de lectura y no se pueden registrar, corregir ni anular compras.</p>
+<div class="fam-card"><label>Mes <input id="cf-pur-month" type="month"></label> <button type="button" class="secondary" id="cf-pur-refresh">Actualizar compras</button></div>
+<div id="cf-pur-compras" role="tabpanel" aria-labelledby="fam-tab-compras"><h2>🧾 Caja y tickets</h2><p>Un solo historial para las dos personas. Cada compra admite justificantes (foto del ticket, imagen o PDF) que se guardan en la nube privada de la familia y ven los dos teléfonos.</p>
+<form id="cf-pur-form" novalidate>
+<label>Comercio <input id="cf-pur-shop" maxlength="300" autocomplete="off"></label>
+<label>Fecha <input id="cf-pur-date" type="date"></label>
+<label>Total (€) <input id="cf-pur-total" inputmode="decimal" placeholder="23,45" autocomplete="off"></label>
+<label>Nota <input id="cf-pur-note" maxlength="1000" autocomplete="off"></label>
+<div id="cf-pur-lines"></div>
+<button type="button" class="secondary" id="cf-pur-addline">+ Línea (artículo)</button> <button type="button" class="secondary" id="cf-pur-adddisc">+ Descuento</button>
+<button type="submit" class="primary" id="cf-pur-save">Guardar compra de la familia</button> <button type="button" class="secondary" id="cf-pur-cancel-edit" hidden>Cancelar corrección</button> <button type="button" class="secondary" id="cf-pur-clear">Limpiar formulario</button>
+</form>
+<p id="cf-pur-msg" role="status" aria-live="polite"></p>
+<p id="cf-pur-err" class="cf-cloud-error" role="alert" aria-live="assertive"></p>
+<button type="button" class="secondary" id="cf-pur-retry" hidden>Reintentar compra pendiente</button>
+<div id="cf-pur-list"></div></div>
+<div id="cf-pur-informes" role="tabpanel" aria-labelledby="fam-tab-informes" hidden><h2>📊 Informes y copias</h2><p>El mismo informe mensual para las dos personas, y las copias de seguridad.</p>
+<div id="cf-pur-report" aria-live="polite"></div>
+<button type="button" class="secondary" id="cf-pur-pdf">PDF del mes</button> <button type="button" class="secondary" id="cf-pur-export">Guardar copia de seguridad de la familia (archivo verificable)</button></div>
+</section>
+</div>
+<button type="button" id="cf-compare-lists" hidden></button><div id="cf-compare-output" hidden></div>
+<details id="cf-maint" class="fam-maint"><summary>⚙️ Mantenimiento / Datos antiguos</summary><p class="fam-note">Zona secundaria, solo para consultar. No se borra, importa ni mezcla nada con los datos compartidos de la familia.</p>
+<details id="cf-legacy" class="fam-legacy"><summary>Datos locales antiguos de este teléfono (no compartidos)</summary>
+<p class="fam-legacy-note"><strong>Atención:</strong> esta zona es la aplicación antigua. Sus listas, compras y justificantes se guardan <strong>solo en este teléfono</strong>, no se comparten ni cuentan en los informes de la familia. Úsala solo para consultar o sacar copias de lo antiguo.</p>
+<header class="top cheerful-header">
+<div aria-label="Hogar de ejemplo" class="owners-heading">
+<span class="owners-intro">NUESTRA LISTA DE CASA</span>
+<div class="owners-name"><span>Usuario 1</span><span class="owners-amp">y</span><span>Usuario 2</span></div>
+</div>
+<div aria-label="Portada alegre con sol, frutas, flores y una cesta de compra" class="cover-art" role="img">
+<div class="sun"></div><span aria-hidden="true" class="cover-emoji fruit">🍎</span><span aria-hidden="true" class="cover-emoji bread">🥖</span><span aria-hidden="true" class="cover-emoji leaves">🌼</span><span aria-hidden="true" class="cover-emoji basket">🛍️</span>
+<div class="cover-caption">¡Lo que hace falta, en un mismo lugar!</div>
+</div>
+<div class="cover-bottom"><div><div class="eyebrow">APLICACIÓN ANTIGUA · DATOS LOCALES</div><h1>Compra Familiar</h1><p>Tu lista, sencilla y siempre a mano.</p></div><div aria-hidden="true" class="bag">🛒</div></div>
+</header>
+<div aria-label="Secciones principales" class="tabs" role="navigation"><button aria-current="page" class="active" id="tab-home" data-cf-tab="home" type="button">🏠 Falta en casa</button><button aria-current="false" id="tab-shop" data-cf-tab="shop" type="button">🛒 En la tienda</button><button aria-current="false" id="tab-expenses" data-cf-tab="expenses" type="button">🧾 Compras</button><button aria-current="false" id="tab-stats" data-cf-tab="stats" type="button">📊 Estadísticas</button><button id="tab-archive" data-cf-tab="archive" style="display:none" type="button">Archivados</button></div>
+<section id="main-active"><div class="view-heading" id="current-view-heading"><h2 id="current-view-title">🏠 Falta en casa</h2><p id="current-view-desc">Apunta durante días todo lo que haga falta. Esta lista se conserva al cerrar la app.</p></div><p class="shop-status" hidden="" id="shop-status">En la tienda: toca el círculo para marcar lo que has puesto provisionalmente en el carro. No se registra ningún gasto.</p><div aria-label="Dos maneras de ver la misma lista" class="list-mode-bar" hidden="" role="group"><button aria-pressed="true" class="mode-button current" id="mode-home" type="button">🏠 Falta en casa</button><button aria-pressed="false" class="mode-button" id="mode-shop" type="button">🛒 Estoy comprando</button></div><p class="mode-help" hidden="" id="mode-help">Apunta aquí lo que va faltando durante días. No desaparece al cerrar el navegador; podrás usar la misma lista en la tienda.</p><form class="form" id="add-form"><input aria-label="Nombre del producto" autocomplete="off" id="new-name" maxlength="100" placeholder="Ej. Papel higiénico, leche, pilas…" required=""/><button class="primary" type="submit">＋ Apuntar</button></form><div class="section-head"><h2>Falta en casa</h2><small id="total-count"></small></div><div aria-live="polite" class="list" id="item-list"></div><div class="toolbar" hidden="" id="shopping-toolbar"><button class="secondary" id="review-after-pay" type="button">🧾 Registrar compra tras pagar</button><button class="secondary" id="confirm-cart" type="button">✓ Confirmar artículos revisados</button><button class="secondary" hidden="" id="clear-bought" type="button">Archivar comprados ahora</button></div></section>
+<section aria-label="Compras y gastos" class="expense-panel" id="main-expenses">
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div id="transaction-view"><div class="view-heading"><h2>🧾 Compras después de pagar</h2><p>Introduce el ticket o una compra manual. Lo que está en el carro no se contabiliza.</p></div><section aria-labelledby="receipt-title" class="receipt-box"><h2 id="receipt-title">📷 Cámara y archivos</h2><p>Estos botones están disponibles en la sección Compras. Haz una foto del ticket o adjunta una imagen o documento PDF de una compra externa.</p><div class="receipt-buttons"><label class="receipt-button" for="camera-input" role="button" tabindex="0"><svg aria-hidden="true" viewbox="0 0 24 24"><path d="M4 7h4l2-3h4l2 3h4v12H4z"></path><circle cx="12" cy="13" r="3.5"></circle></svg> Hacer foto</label><label class="receipt-button" for="attach-input" role="button" tabindex="0"><svg aria-hidden="true" viewbox="0 0 24 24"><path d="m8 12 6-6a4 4 0 0 1 6 6l-9 9a6 6 0 0 1-9-9l8-8"></path></svg> Adjuntar archivo</label></div><label class="receipt-store-label" for="receipt-store">Supermercado del justificante (si lo conoces)
+<select id="receipt-store"><option value="">Sin identificar</option><option>ALDI</option><option>MERCADONA</option><option>CARREFOUR</option><option>ALCAMPO</option><option>LIDL</option><option value="OTRO">Otra tienda</option></select></label><label class="receipt-store-label" for="receipt-other-shop" hidden="" id="receipt-other-wrap">Nombre de otra tienda<input id="receipt-other-shop" maxlength="100" placeholder="Nombre del comercio"/></label><input accept="image/*" aria-label="Fotografiar ticket" capture="environment" class="receipt-input" id="camera-input" type="file"/><input accept="image/*,application/pdf,.pdf" aria-label="Adjuntar imagen o PDF del ticket o factura" class="receipt-input" id="attach-input" type="file"/><div class="receipt-preview" hidden="" id="receipt-preview"></div><div class="receipt-note" id="receipt-status" role="status"></div><p class="receipt-note" id="receipt-compression-notice">Privacidad: al guardar imágenes JPEG, PNG o WebP, la aplicación intentará crear una copia WebP optimizada para el ticket (lado mayor 2200 px, calidad 92 %), sin metadatos EXIF. La compresión puede perder detalles finos: revisa siempre su legibilidad. Los PDF se conservan sin cambios. Si el navegador no puede procesar una imagen, se bloqueará el guardado para evitar conservar metadatos de ubicación inadvertidamente.</p><div class="section-head"><h2>Justificantes guardados aquí</h2><small id="receipt-count">0</small></div><div class="receipt-list" id="receipt-list"></div><p class="receipt-note">Se almacenan localmente en este navegador mediante IndexedDB; no se envían a ningún servidor. No hay reconocimiento OCR ni anotación automática de gastos todavía. Los datos pueden perderse si borras el almacenamiento del navegador.</p></section><section aria-labelledby="store-title" class="store-panel">
+<h2 id="store-title">🏪 TIENDAS</h2>
+<p>Selecciona un supermercado para buscar los establecimientos cercanos en Google Maps.</p>
+<div class="store-control"><select aria-label="Selecciona un supermercado" id="maps-store">
+<option value="">Seleccionar supermercado…</option><option value="ALDI">ALDI</option><option value="MERCADONA">MERCADONA</option><option value="CARREFOUR">CARREFOUR</option><option value="ALCAMPO">ALCAMPO</option><option value="LIDL">LIDL</option>
+</select><button class="primary" id="maps-open" type="button">📍 Ver en Maps</button></div>
+<p class="help" id="maps-help" role="status">Google Maps utiliza su propia ubicación si le concedes permiso. Esta app no la guarda.</p>
+</section><div class="section-head"><h2>Registrar una compra</h2><small>Importe real</small></div><p class="expenses-note" style="background:#fff7e8;padding:12px;border-radius:10px">🧾 <b>Después de pagar:</b> registra el ticket o introduce productos e importe real. Los artículos puestos en el carro no generan gastos automáticamente. Revisa luego qué artículos estaban realmente en el ticket.</p><form class="purchase-form" id="purchase-form">
+<label>Supermercado / comercio<select id="purchase-shop" required=""><option value="">Seleccionar…</option><option>ALDI</option><option>MERCADONA</option><option>CARREFOUR</option><option>ALCAMPO</option><option>LIDL</option><option value="OTRO">Otro comercio</option></select></label>
+<label hidden="" id="other-shop-wrap">Nombre de otro comercio<input id="other-shop-name" maxlength="90" placeholder="Nombre del comercio"/></label>
+<div class="field-pair"><label>Fecha <input id="purchase-date" required="" type="date"/></label><label>Total (€) <input id="purchase-amount" inputmode="decimal" maxlength="15" placeholder="Ej. 23,45" required="" type="text"/></label></div>
+<section aria-label="Desglose opcional por artículos" class="purchase-lines">
+<h3>🧾 Artículos comprados (opcional)</h3>
+<p class="expenses-note" style="margin:0">Puedes registrar cualquier producto, aunque no figure en tu lista. Permite cantidades decimales (por ejemplo 0,645 kg), el subtotal exacto del ticket y descuentos o ajustes. Si añades líneas, su suma debe coincidir con el total de la compra.</p>
+<div id="purchase-lines"></div>
+<button class="secondary" id="purchase-add-line" type="button">＋ Añadir artículo a esta compra</button>
+<button type="button" id="purchase-add-adjustment" class="secondary">− Añadir descuento o ajuste</button>
+<div class="purchase-sum" id="purchase-line-summary" role="status">Sin desglose: se guardará solo el importe total.</div>
+</section>
+<label>Detalle opcional <input id="purchase-note" maxlength="180" placeholder="Ej. Descuento, observaciones"/></label>
+<button class="primary" type="submit">＋ Guardar compra</button>
+</form></div><div hidden="" id="stats-view"><div class="view-heading"><h2>📊 Estadísticas e informes</h2><p>Consulta las compras registradas, genera PDF y realiza copias ZIP completas.</p></div><button class="secondary" id="open-archive" data-cf-tab="archive" type="button">📦 Ver artículos archivados</button><div class="section-head"><h2>Resumen mensual</h2><small>Compras confirmadas aquí</small></div><div class="expense-tools"><label for="expense-month">Seleccionar mes</label> <input aria-label="Seleccionar mes" id="expense-month" type="month"/></div><div class="expense-summary"><small>Gasto total del mes</small><strong id="expense-total">0,00 €</strong><small id="expense-count">0 compras registradas</small></div><div class="only-print" id="report-month-head"></div><div class="report-panel"><h3>Por semanas (lunes a domingo)</h3><div class="report-list" id="weekly-breakdown"></div></div><div class="report-panel"><h3>Por días</h3><div class="report-list" id="daily-breakdown"></div></div><div class="report-panel"><h3>Compras registradas</h3><div class="report-list" id="purchase-list"></div></div><div class="toolbar expense-actions"><button class="primary" id="download-report" type="button">⬇ Informe PDF del mes</button><button class="secondary" id="share-report" type="button">↗ Enviar PDF del mes a Drive…</button><button class="secondary" id="print-expenses" type="button">🖨️ Imprimir</button></div><p class="expenses-note" id="report-download-status" role="status">El PDF contiene únicamente las compras del mes seleccionado (no solo la última). El ZIP guarda toda la lista, todo el historial de compras y todos los justificantes accesibles en este navegador. Para llevar un PDF a Drive, usa «Enviar PDF del mes a Drive…» y selecciónalo en el menú de Android.</p><div class="backup-box"><h3>Copia de seguridad de esta prueba</h3><p><b>Copia completa ZIP (experimental):</b> reúne la lista, compras y los justificantes guardados en este navegador. Comprueba la descarga antes de usarla como respaldo. Una restauración sustituirá los tres conjuntos de datos.</p><div class="backup-actions"><button class="primary" id="export-complete" type="button">⬇ Copia ZIP de TODO el historial</button><label class="secondary" for="import-complete" id="import-complete-label" tabindex="0">⬆ Restaurar ZIP</label><input accept=".zip,application/zip" hidden="" id="import-complete" type="file"/></div><p class="expenses-note" id="complete-backup-status" role="status">Límite experimental: 120 MB por ZIP, máximo 500 justificantes. La copia ZIP no está cifrada: consérvala en lugar privado.</p><p class="expenses-note">Copia antigua JSON, disponible por compatibilidad: exporta la lista y el historial manual de compras. <b>Los justificantes adjuntos no se incluyen en la copia JSON antigua.</b> Importar sustituye los productos y compras locales tras pedir confirmación.</p><div class="backup-actions"><button class="secondary" id="export-data" type="button">⬇ JSON de TODO el historial (sin adjuntos)</button><label class="secondary" for="import-data" tabindex="0">⬆ Importar datos</label><input accept="application/json,.json" class="backup-file" hidden="" id="import-data" type="file"/></div><p class="expenses-note" id="backup-status" role="status"></p></div></div></section>
+<section class="archived" id="main-archive"><button class="secondary" id="leave-archive" data-cf-tab="home" type="button">← Volver a Falta en casa</button><div class="section-head"><h2>Archivados</h2><small>Historial local</small></div><div class="list" id="archive-list"></div></section>
+<p class="subtle">«Falta en casa» y «Estoy comprando» muestran los mismos artículos; solo cambia la forma de utilizarlos. Marcar algo en el carro NO es confirmar una compra. Tras pagar, registra el ticket o los importes manualmente y confirma qué artículos de la lista se han comprado. Solo los artículos confirmados pasan a Archivados 24 horas después. Todo sigue siendo local en este prototipo: todavía no existe sincronización entre móviles.</p></main>
+</details></details>
+<p class="fam-foot" id="fam-foot">Compra Familiar · hogar compartido</p>
+</main>
+<dialog id="editor"><form class="modal" id="edit-form" method="dialog"><h3>Editar producto</h3><label for="edit-name">Producto</label><input id="edit-name" maxlength="100" required=""/><label for="edit-qty">Cantidad</label><input id="edit-qty" inputmode="numeric" max="999" min="1" required="" type="number"/><div class="modal-actions"><button class="secondary" id="cancel-edit" type="button">Cancelar</button><button class="primary" id="save-edit" type="submit">Guardar cambios</button></div></form></dialog>
+<dialog aria-label="Opciones del artículo" id="product-options"><div class="nutri-modal-inner">
+<h3 id="options-title">Alimento</h3><p>¿Qué quieres hacer con este producto?</p>
+<div class="nutri-dialog-actions"><button class="secondary" id="option-edit" type="button">✎ Editar</button><button class="primary" id="option-consult" type="button">🔎 Consultar</button></div>
+<button class="secondary" id="option-cancel" type="button">Cerrar</button>
+</div></dialog>
+<dialog aria-label="Consultar información nutricional" id="nutrition-modal"><div class="nutri-modal-inner">
+<h3>🥗 Información nutricional</h3>
+<p>Busca el alimento por nombre o introduce su código de barras. Selecciona el producto correcto: los valores pueden cambiar según marca, formato y preparación.</p>
+<form class="nutri-search-box" id="nutrition-search-form"><input aria-label="Producto o código de barras" id="nutrition-query" maxlength="100" placeholder="Ej. leche entera / 841…" required=""/><button class="primary" type="submit">Buscar</button></form>
+<div class="nutri-status" id="nutrition-status" role="status">Consultar no guarda nada. Pulsa «Usar este producto» si quieres asociar su ficha a la lista.</div>
+<div id="generic-advice"></div><div id="nutrition-results"></div><div id="nutrition-details"></div>
+<p class="nutri-source">Fuente: <a href="https://world.openfoodfacts.org" rel="noopener noreferrer" target="_blank">Open Food Facts</a>, datos abiertos aportados por colaboradores (ODbL). Puede haber errores o datos incompletos. No es asesoramiento médico o dietético.</p>
+<div class="nutri-dialog-actions"><button class="secondary" id="nutrition-open-web" type="button">Abrir búsqueda web</button><button class="secondary" id="nutrition-close" type="button">Cerrar</button></div>
+</div></dialog>
+<div class="snack" id="snack" role="status"><span id="snack-text">Artículo retirado.</span><button id="undo" type="button">Deshacer</button></div>
+
+<script src="./app-01.js"></script>
+<script src="./app-02.js"></script>
+<script src="./app-03.js"></script>
+<script src="./app-04.js"></script>
+<script src="./app-05.js"></script>
+<script src="./app-06.js"></script>
+<script src="./app-07.js"></script>
+
+<script src="./app-08.js"></script>
+<script src="./navigation.js"></script>
+<script src="./vendor/supabase-2.57.0.js"></script>
+<script src="./sync-config.js"></script>
+<script type="module" src="./sync-bridge.mjs"></script><script type="module" src="./sync-purchases.mjs"></script><script type="module" src="./family-ui.mjs"></script>
+</body></html>

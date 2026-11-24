@@ -1,0 +1,48 @@
+/* v0.13 candidata (NO desplegada): copia de seguridad de justificantes. ZIP sin compresion (STORE) con manifest.json + justificantes/<id>.<ext>.
+   Se incluyen TAMBIEN los justificantes quitados (historial). verifyBackupZip comprueba CRC32, huellas SHA-256, tamanos y que no sobren ni falten archivos.
+   Escritor/lector propios y minimos (el ZIP de la zona antigua vive en un script no modular y no es importable). Sin red. */
+import {sha256Hex,TYPES} from './receipts-core.mjs';
+const T=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+export const crc32=b=>{let c=0xFFFFFFFF;for(let i=0;i<b.length;i++)c=T[(c^b[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0;};
+const enc=new TextEncoder(),dec=new TextDecoder('utf-8',{fatal:true});
+const u16=(n)=>[n&255,(n>>>8)&255],u32=(n)=>[n&255,(n>>>8)&255,(n>>>16)&255,(n>>>24)&255];
+export function zipStore(files){ // files: [{name,bytes}]
+ const parts=[],cen=[];let off=0;
+ for(const f of files){const nm=enc.encode(f.name),crc=crc32(f.bytes),h=new Uint8Array([0x50,0x4B,3,4,...u16(20),...u16(0x0800),...u16(0),...u16(0),...u16(0x21),...u32(crc),...u32(f.bytes.length),...u32(f.bytes.length),...u16(nm.length),...u16(0)]);
+  parts.push(h,nm,f.bytes);cen.push(new Uint8Array([0x50,0x4B,1,2,...u16(20),...u16(20),...u16(0x0800),...u16(0),...u16(0),...u16(0x21),...u32(crc),...u32(f.bytes.length),...u32(f.bytes.length),...u16(nm.length),...u16(0),...u16(0),...u16(0),...u16(0),...u32(0),...u32(off)]),nm);off+=h.length+nm.length+f.bytes.length;}
+ const cdSize=cen.reduce((a,x)=>a+x.length,0);const end=new Uint8Array([0x50,0x4B,5,6,...u16(0),...u16(0),...u16(files.length),...u16(files.length),...u32(cdSize),...u32(off),...u16(0)]);
+ const all=[...parts,...cen,end],out=new Uint8Array(all.reduce((a,x)=>a+x.length,0));let p=0;for(const x of all){out.set(x,p);p+=x.length;}return out;}
+export function unzipStore(bytes){ // devuelve Map nombre->bytes; lanza si el ZIP esta danado o algun CRC no coincide
+ const dv=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);let e=-1;for(let i=bytes.length-22;i>=Math.max(0,bytes.length-65557);i--)if(dv.getUint32(i,true)===0x06054B50){e=i;break;}
+ if(e<0)throw Error('No es un ZIP valido (sin directorio final).');const n=dv.getUint16(e+10,true);let p=dv.getUint32(e+16,true);const out=new Map();
+ for(let i=0;i<n;i++){if(dv.getUint32(p,true)!==0x02014B50)throw Error('Directorio central danado.');const method=dv.getUint16(p+10,true),crc=dv.getUint32(p+16,true),cs=dv.getUint32(p+20,true),us=dv.getUint32(p+24,true),nl=dv.getUint16(p+28,true),xl=dv.getUint16(p+30,true),cl=dv.getUint16(p+32,true),lo=dv.getUint32(p+42,true);
+  if(method!==0)throw Error('Metodo de compresion no admitido.');const name=dec.decode(bytes.subarray(p+46,p+46+nl));if(dv.getUint32(lo,true)!==0x04034B50)throw Error('Cabecera local danada: '+name);const ds=lo+30+dv.getUint16(lo+26,true)+dv.getUint16(lo+28,true);if(cs!==us||ds+cs>bytes.length)throw Error('Tamano incoherente: '+name);
+  const data=bytes.subarray(ds,ds+cs);if(crc32(data)!==crc)throw Error('CRC32 incorrecto: '+name);if(out.has(name))throw Error('Nombre repetido: '+name);out.set(name,data);p+=46+nl+xl+cl;}
+ return out;}
+const pathOf=r=>'justificantes/'+r.id+'.'+TYPES[r.mime];
+/* receipts: filas de cf_receipts_export (ready y void); getBytes(id)->Promise<Uint8Array>. Descarta nada: si falta o no coincide un archivo, FALLA (no hay copias a medias). */
+export async function buildBackup({home,receipts,getBytes,now=new Date()}){
+ const list=receipts.filter(r=>r.status==='ready'||r.status==='void'),files=[],meta=[];
+ for(const r of list){if(!r.sha256||!TYPES[r.mime])throw Error('Metadatos incompletos del justificante '+r.id);const b=await getBytes(r.id);if(!b||b.length!==r.size_bytes)throw Error('Tamano distinto en '+r.id+': no se genera copia incompleta.');if((await sha256Hex(b))!==r.sha256)throw Error('Huella distinta en '+r.id+': no se genera copia incompleta.');files.push({name:pathOf(r),bytes:b});meta.push({id:r.id,purchase_id:r.purchase_id,file_name:r.file_name,mime:r.mime,size_bytes:r.size_bytes,sha256:r.sha256,status:r.status,created_by:r.created_by,created_at:r.created_at,voided_at:r.voided_at||null,void_reason:r.void_reason||null,path:pathOf(r)});}
+ const body={schema:'compra-familiar-receipts-backup',version:1,created_at:now.toISOString(),household_id:home,count:meta.length,receipts:meta};
+ const mb=enc.encode(JSON.stringify(body,null,1)),manifest={...body,manifest_note:'La huella del manifiesto se calcula sobre el JSON sin este campo ni integrity'};
+ const integrity=await sha256Hex(enc.encode(JSON.stringify(body)));const full=enc.encode(JSON.stringify({...manifest,integrity:{receipts_sha256:integrity}},null,1));void mb;
+ return {zip:zipStore([{name:'manifest.json',bytes:full},...files]),count:meta.length,bytes:files.reduce((a,f)=>a+f.bytes.length,0)};}
+/* Comprobacion de recuperacion: ZIP integro, manifiesto coherente, cada archivo con su huella y tamano, sin sobrantes. Devuelve informe; ok solo si todo coincide. */
+export async function verifyBackupZip(zipBytes,{expectedIds=null}={}){
+ const rep={ok:false,files:0,problems:[]};let map;try{map=unzipStore(zipBytes);}catch(e){rep.problems.push(e.message);return rep;}
+ const mf=map.get('manifest.json');if(!mf){rep.problems.push('Falta manifest.json');return rep;}let m;try{m=JSON.parse(dec.decode(mf));}catch{rep.problems.push('manifest.json ilegible');return rep;}
+ if(m.schema!=='compra-familiar-receipts-backup'||m.version!==1){rep.problems.push('Esquema desconocido');return rep;}
+ const {integrity,manifest_note,...body}=m;if(!integrity||(await sha256Hex(enc.encode(JSON.stringify(body))))!==integrity.receipts_sha256)rep.problems.push('La huella del manifiesto no coincide (manifiesto alterado)');
+ if(m.count!==m.receipts.length)rep.problems.push('Recuento del manifiesto incoherente');const seen=new Set(['manifest.json']);
+ for(const r of m.receipts){seen.add(r.path);const b=map.get(r.path);if(!b){rep.problems.push('Falta el archivo '+r.path);continue;}if(b.length!==r.size_bytes)rep.problems.push('Tamano distinto: '+r.path);else if((await sha256Hex(b))!==r.sha256)rep.problems.push('Huella distinta: '+r.path);else rep.files++;}
+ for(const n of map.keys())if(!seen.has(n))rep.problems.push('Archivo sobrante no declarado: '+n);
+ if(expectedIds){const have=new Set(m.receipts.map(r=>r.id));for(const id of expectedIds)if(!have.has(id))rep.problems.push('Falta en la copia el justificante '+id);}
+ rep.household_id=m.household_id;rep.count=m.count;rep.ok=rep.problems.length===0;return rep;}
+
+/* Plan de restauracion: exige copia INTEGRA (verifyBackupZip ok) y devuelve el manifiesto para cf_private.restore_receipts y los archivos a subir a <hogar destino>/<id>. No toca nada. */
+export async function planRestore(zipBytes,targetHome){
+ if(!/^[0-9a-f-]{36}$/.test(String(targetHome||'')))throw Error('Hogar de destino invalido.');
+ const rep=await verifyBackupZip(zipBytes);if(!rep.ok)throw Error('La copia no es valida: '+rep.problems.slice(0,3).join(' · '));
+ const map=unzipStore(zipBytes),{integrity,manifest_note,...manifest}=JSON.parse(dec.decode(map.get('manifest.json')));
+ return {manifest,uploads:manifest.receipts.map(r=>({path:targetHome+'/'+r.id,bytes:map.get(r.path),mime:r.mime,sha256:r.sha256,size:r.size_bytes})),sourceHome:manifest.household_id,sameHome:manifest.household_id===targetHome};}

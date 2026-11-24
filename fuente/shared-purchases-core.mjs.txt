@@ -1,0 +1,43 @@
+/* v0.11 candidata: nucleo puro (sin DOM ni red) del historial economico compartido. Mismas reglas que v0.7.0 (app-03.js) y que cf_report_month (SQL 005):
+   importes en centimos enteros, fecha = dia civil AAAA-MM-DD sin zona horaria, semanas lunes-domingo, subtotal = Math.round(qty*precio), anuladas excluidas. */
+export const MAX_CENTS=100000000,MAX_LINES=250;
+export const validDate=s=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&!Number.isNaN(new Date(s+'T12:00:00Z').getTime())&&new Date(s+'T12:00:00Z').toISOString().slice(0,10)===s&&s>='2000-01-01'&&s<='2100-12-31';
+export function parseCents(raw){const s=String(raw).trim().replace(/\s/g,'').replace('€','');let n;if(/^(?:\d{1,3}(?:\.\d{3})+|\d{1,8})(?:,\d{1,2})?$/.test(s))n=s.replace(/\./g,'').replace(',','.');else if(/^\d{1,8}(?:[.,]\d{1,2})?$/.test(s))n=s.replace(',','.');else return null;const p=n.split('.');const c=Number(p[0])*100+Number((p[1]||'').padEnd(2,'0'));return Number.isSafeInteger(c)&&c>0&&c<=MAX_CENTS?c:null;}
+export const parseQty=raw=>{const q=Number(String(raw).trim().replace(',','.'));return Number.isFinite(q)&&q>0&&q<=999&&Math.abs(q*1000-Math.round(q*1000))<1e-7?q:null;};
+export const money=c=>new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(c/100);
+/* Formulario -> peticion cf_purchase_apply. lines: [{name,qty,price,adjustment}] con textos del usuario. Lanza Error con mensaje en espanol. */
+export function buildPurchase({id,shop,date,total,note='',lines=[]}){
+ shop=String(shop||'').trim();if(!shop||shop.length>300)throw Error('Indica el comercio (hasta 300 caracteres).');
+ if(!validDate(date))throw Error('La fecha no es válida.');
+ note=String(note||'').trim();if(note.length>1000)throw Error('La nota admite hasta 1.000 caracteres.');
+ if(lines.length>MAX_LINES)throw Error('Máximo '+MAX_LINES+' líneas por compra.');
+ const out=lines.map((l,i)=>{const name=String(l.name||'').trim();if(!name||name.length>120)throw Error('Línea '+(i+1)+': nombre entre 1 y 120 caracteres.');
+  const price=parseCents(l.price);if(price===null)throw Error('Línea '+(i+1)+': revisa el importe (ejemplo 2,35).');
+  if(l.adjustment)return {name,kind:'adjustment',qty:1,unitCents:-price,subtotalCents:-price};
+  const qty=parseQty(l.qty);if(qty===null)throw Error('Línea '+(i+1)+': cantidad positiva con hasta tres decimales.');
+  return {name,qty,unitCents:price,subtotalCents:Math.round(qty*price)};});
+ let cents;
+ if(out.length){cents=out.reduce((a,x)=>a+x.subtotalCents,0);if(cents<0||cents>MAX_CENTS)throw Error('El total de las líneas no es válido (¿descuento mayor que la compra?).');const entered=String(total||'').trim()===''?null:parseCents(total);if(entered!==null&&entered!==cents)throw Error('El total indicado ('+money(entered)+') no coincide con la suma de las líneas ('+money(cents)+').');}
+ else{cents=parseCents(total);if(cents===null)throw Error('Indica el importe total (ejemplo 23,45).');}
+ return {kind:'create',id,shop,date,cents,note,lines:out};
+}
+export const weekStart=d=>{const t=new Date(d+'T12:00:00Z');t.setUTCDate(t.getUTCDate()-((t.getUTCDay()+6)%7));return t.toISOString().slice(0,10);};
+/* Informe local a partir de registros; DEBE coincidir con cf_report_month (se comprueba en pruebas). */
+export function summarize(records,month){
+ const s=records.filter(p=>p.status!=='void'&&p.date.slice(0,7)===month),add=(m,k,c)=>m.set(k,(m.get(k)||0)+c),day=new Map(),week=new Map(),shop=new Map(),who=new Map();
+ for(const p of s){add(day,p.date,p.cents);add(week,weekStart(p.date),p.cents);add(shop,p.shop,p.cents);const w=who.get(p.created_by)||{cents:0,count:0};w.cents+=p.cents;w.count++;who.set(p.created_by,w);}
+ const arr=(m,k,v)=>[...m].sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0).map(([a,b])=>({[k]:a,[v]:b}));
+ return {month,total_cents:s.reduce((a,p)=>a+p.cents,0),count:s.length,by_day:arr(day,'date','cents'),by_week:arr(week,'week_start','cents'),by_shop:arr(shop,'shop','cents'),by_member:[...who].sort((a,b)=>a[0]<b[0]?-1:1).map(([user,v])=>({user,cents:v.cents,count:v.count}))};
+}
+const canon=v=>Array.isArray(v)?'['+v.map(canon).join(',')+']':v&&typeof v==='object'?'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}':JSON.stringify(v);
+const sha256=async t=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t)))].map(b=>b.toString(16).padStart(2,'0')).join('');
+/* Exportacion verificable: el JSON del servidor + huella SHA-256 canonica de las compras y recuentos. */
+export async function sealExport(exp){if(exp?.schema!=='compra-familiar-shared-purchases'||exp.version!==1||!Array.isArray(exp.purchases))throw Error('Exportación no válida');
+ const integrity={algorithm:'SHA-256',purchases_sha256:await sha256(canon(exp.purchases)),purchase_count:exp.purchases.length,line_count:exp.purchases.reduce((a,p)=>a+p.lines.length,0),confirmed_cents:exp.purchases.filter(p=>p.status==='confirmed').reduce((a,p)=>a+p.cents,0)};
+ if(Array.isArray(exp.items)){integrity.items_sha256=await sha256(canon(exp.items));integrity.item_count=exp.items.length;}
+ return {...exp,integrity};}
+export async function verifyExport(file){const i=file?.integrity;if(!i||i.algorithm!=='SHA-256')return {ok:false,reason:'sin huella'};
+ const {integrity,...exp}=file;const again=await sealExport(exp);const ok=again.integrity.purchases_sha256===i.purchases_sha256&&again.integrity.purchase_count===i.purchase_count&&again.integrity.line_count===i.line_count&&again.integrity.confirmed_cents===i.confirmed_cents&&again.integrity.items_sha256===i.items_sha256&&again.integrity.item_count===i.item_count;
+ if(!ok)return {ok:false,reason:'la huella no coincide'};
+ for(const p of exp.purchases){if(p.lines.length&&p.lines.reduce((a,l)=>a+l.subtotalCents,0)!==p.cents)return {ok:false,reason:'suma de líneas incoherente en '+p.id};}
+ return {ok:true,purchases:i.purchase_count};}

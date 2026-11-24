@@ -1,0 +1,34 @@
+/* v0.10.0: intención persistida ANTES del envío, ámbito usuario/hogar, sin tokens. */
+export const transient=e=>![400,401,403,409,422].includes(Number(e?.status)) && !['22023','23502','23503','23505','23514','42501','40001','CF004','22P02'].includes(e?.code);
+export const friendlyError=e=>{const c=String(e?.code||''),m=String(e?.message||'Error desconocido');const t={CF004:'Otra persona modificó este artículo antes que tú. Actualiza la lista y repite el cambio.',CF001:'Demasiadas acciones seguidas. Espera un minuto y vuelve a intentarlo.',CF003:'El hogar ha alcanzado el límite de operaciones de este mes. Se renueva solo el día 1 (hora UTC); tus cambios pendientes se conservan.',CF002:'La lista tiene 500 artículos recientes. Compra o archiva algunos y vuelve a intentarlo.','42501':'No tienes acceso a esta lista o la sesión ha caducado. Inicia sesión de nuevo.','22023':'El servidor rechazó el dato. Revisa nombre, cantidad y unidad.'};return t[c]||m;};
+export function validateName(name){name=String(name).trim();if(!name||name.length>160)throw Error('Nombre entre 1 y 160 caracteres');return name;}
+export function validateQuantity(q){q=Number(String(q).replace(',','.'));if(!Number.isFinite(q)||q<=0||q>999999||Math.abs(q*1000-Math.round(q*1000))>1e-7)throw Error('Cantidad positiva con hasta tres decimales');return q;}
+export class Outbox {
+ constructor({storage,lock,uuid,apply,lookup,now=()=>Date.now(),prefix='cf-preprod-v010:op:'}){Object.assign(this,{storage,lock,uuid,apply,lookup,now,prefix});}
+ key(user,home){return this.prefix+user+':'+home;}
+ read(user,home){const s=this.storage.getItem(this.key(user,home));if(!s)return null;let op;try{op=JSON.parse(s);}catch{throw Error('Cola dañada: conservar copia y detener cambios');}if(op.user!==user||op.home!==home||!op.id||!op.request||!['pending','unknown','confirmed','rejected','cancelled'].includes(op.state))throw Error('Cola inválida: cambios detenidos');return op;}
+ save(op){this.storage.setItem(this.key(op.user,op.home),JSON.stringify(op));return op;}
+ async execute(user,home,request){return this.lock(this.key(user,home),async()=>{
+  let op=this.read(user,home);
+  if(op&&['pending','unknown'].includes(op.state)){
+   if(JSON.stringify(op.request)!==JSON.stringify(request))throw Error('Existe una operación sin resolver. Reconciliar antes de otro cambio.');
+  }else op=this.save({user,home,id:this.uuid(),request,state:'pending',attempts:0,created:this.now()});
+  return this.send(op);
+ });}
+ async retry(user,home){return this.lock(this.key(user,home),async()=>{const op=this.read(user,home);if(!op||!['pending','unknown'].includes(op.state))return op;return this.send(op);});}
+ async send(op){
+  // Consultar ledger primero, incluso tras cierre inesperado con estado pending.
+  const known=await this.lookup(op).catch(()=>null);
+  if(known){if(JSON.stringify(known.request)!==JSON.stringify(op.request)){
+    // JSONB puede reordenar claves: comparar por estructura canónica.
+    if(canonical(known.request)!==canonical(op.request))throw Error('Operación remota distinta: revisión manual');
+   }return this.save({...op,state:'confirmed',result:known.result});}
+  if(op.attempts>=3)throw Error('Tres intentos agotados. No crear una intención nueva; consultar operación en servidor.');
+  if(op.lastAttempt && this.now()-op.lastAttempt < Math.min(30000,1000*2**(op.attempts-1)))throw Error('Espera antes de reintentar');
+  op=this.save({...op,state:'unknown',attempts:op.attempts+1,lastAttempt:this.now()});
+  try{const result=await this.apply(op);return this.save({...op,state:'confirmed',result});}
+  catch(e){this.save({...op,state:transient(e)||op.attempts>1?'unknown':'rejected',error:String(e?.message||e)});throw e;}
+ }
+ async cancel(user,home){return this.lock(this.key(user,home),async()=>{const op=this.read(user,home);if(!op||op.attempts)throw Error('No se puede cancelar un envío ambiguo');return this.save({...op,state:'cancelled'});});}
+}
+function canonical(v){if(Array.isArray(v))return '['+v.map(canonical).join(',')+']';if(v&&typeof v==='object')return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}';return JSON.stringify(v);}

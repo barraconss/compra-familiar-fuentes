@@ -1,0 +1,66 @@
+
+(()=>{'use strict';
+ const DB='compra-familiar-recibos-v02',STORE='receipts';
+ const $=id=>document.getElementById(id);
+ $('receipt-store').addEventListener('change',()=>{$('receipt-other-wrap').hidden=$('receipt-store').value!=='OTRO';});
+ let pending=null, previewURL=null, displayedURLs=[];
+ function message(t){$('receipt-status').textContent=t;}
+ function openDB(){return new Promise((resolve,reject)=>{if(!window.indexedDB){reject(new Error('El navegador no permite IndexedDB'));return;}const req=indexedDB.open(DB,1);req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains(STORE))req.result.createObjectStore(STORE,{keyPath:'id'});};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
+ async function transaction(mode,method,payload){const db=await openDB();return new Promise((resolve,reject)=>{const tx=db.transaction(STORE,mode),store=tx.objectStore(STORE);const req=method==='all'?store.getAll():method==='delete'?store.delete(payload):store.put(payload);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);tx.oncomplete=()=>db.close();tx.onabort=()=>reject(tx.error);});}
+ function clearPreview(){if(previewURL){URL.revokeObjectURL(previewURL);previewURL=null;}pending=null;$('receipt-preview').replaceChildren();$('receipt-preview').hidden=true;}
+ function button(label,fn,primary=false){const b=document.createElement('button');b.type='button';b.className=primary?'primary':'secondary';b.textContent=label;b.addEventListener('click',fn);return b;}
+ function make(tag,text){const e=document.createElement(tag);if(text)e.textContent=text;return e;}
+ function isPDF(file){return file.type==='application/pdf'||/\.pdf$/i.test(file.name||'');}
+
+ // Privacidad y memoria: convertir las fotos a un archivo WebP nuevo sin metadatos EXIF.
+ // No se reduce por debajo de 2200px la mayor dimension si la foto ya es menor.
+ // Solo formatos raster comprobables; otros tipos de imagen se rechazan en vez de guardar EXIF.
+ async function prepareReceiptImage(file){
+   if(isPDF(file))return {file,compressed:false};
+   const mime=String(file.type||'').toLowerCase();
+   if(!['image/jpeg','image/png','image/webp'].includes(mime))throw Error('Imagen no compatible para eliminar metadatos. Adjunta JPEG, PNG o WebP, o utiliza PDF.');
+   const bitmap=await (async()=>{
+     if(typeof createImageBitmap==='function')return await createImageBitmap(file,{imageOrientation:'from-image'});
+     return await new Promise((resolve,reject)=>{const url=URL.createObjectURL(file),im=new Image();im.onload=()=>{URL.revokeObjectURL(url);resolve(im);};im.onerror=()=>{URL.revokeObjectURL(url);reject(Error('No se pudo abrir la imagen'));};im.src=url;});
+   })();
+   try{
+     const width=bitmap.width||bitmap.naturalWidth,height=bitmap.height||bitmap.naturalHeight;
+     if(!width||!height||width*height>60000000)throw Error('La imagen es demasiado grande para procesarla de forma segura.');
+     const scale=Math.min(1,2200/Math.max(width,height));
+     const c=document.createElement('canvas');c.width=Math.max(1,Math.round(width*scale));c.height=Math.max(1,Math.round(height*scale));
+     const ctx=c.getContext('2d',{alpha:false});if(!ctx)throw Error('No se puede procesar la imagen en este dispositivo.');
+     ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);ctx.drawImage(bitmap,0,0,c.width,c.height);
+     const blob=await new Promise((resolve,reject)=>c.toBlob(x=>x?resolve(x):reject(Error('No se ha podido generar la imagen WebP')),'image/webp',0.92));
+     if(blob.type!=='image/webp')throw Error('El navegador no admite guardar imágenes WebP.');
+     if(blob.size>15*1024*1024)throw Error('La imagen resultante supera 15 MB.');
+     const base=(file.name||'ticket').replace(/\.[^.]+$/,'').slice(0,100);
+     const newFile=new File([blob],base+'.webp',{type:'image/webp',lastModified:Date.now()});
+     return {file:newFile,compressed:true,fromBytes:file.size,toBytes:newFile.size};
+   }finally{if(typeof bitmap.close==='function')bitmap.close();}
+ }
+ async function requestPersistentStorage(){
+   try{if(navigator.storage?.persist){return await navigator.storage.persist();}}catch(_){/* no soportado o denegado */}
+   return false;
+ }
+
+ function preview(file){clearPreview();if(!file)return;const pdf=isPDF(file),picture=file.type.startsWith('image/');if(!picture&&!pdf){message('Selecciona una imagen o un PDF.');return;}if(file.size>15*1024*1024){message('El archivo supera 15 MB. Selecciona otro más pequeño.');return;}pending=file;previewURL=URL.createObjectURL(file);const node=$('receipt-preview');if(pdf){const p=make('p','📄 PDF: '+file.name);node.append(p);const link=make('a','Abrir PDF para revisarlo');link.href=previewURL;link.target='_blank';link.rel='noopener';node.append(link);}else{const img=make('img');img.src=previewURL;img.alt='Vista previa del justificante seleccionado';node.append(img);}node.append(make('p','Comprueba el justificante antes de guardarlo. Comercio seleccionado: '+(($('receipt-store').value==='OTRO'?$('receipt-other-shop').value.trim()||'otra tienda (pendiente de nombre)':$('receipt-store').value||'sin identificar'))+'.'));const toolbar=make('div');toolbar.className='toolbar';toolbar.append(button('Guardar en este dispositivo',save,true),button('Cancelar',clearPreview));node.append(toolbar);node.hidden=false;message('Archivo seleccionado; todavía no está guardado.');}
+ async function save(){
+  if(!pending)return;
+  if($('receipt-store').value==='OTRO'&&!$('receipt-other-shop').value.trim()){message('Escribe el nombre de la tienda antes de guardar.');return;}
+  const original=pending;
+  message('Preparando justificante y eliminando metadatos de imágenes…');
+  try{
+    const prepared=await prepareReceiptImage(original),file=prepared.file;
+    const rec={id:(window.crypto?.randomUUID?.()||String(Date.now())+'-'+Math.random()),name:file.name||'Justificante de compra',mime:file.type,date:Date.now(),shop:($('receipt-store').value==='OTRO'?$('receipt-other-shop').value.trim():$('receipt-store').value)||null,blob:file,processed:prepared.compressed?'webp-no-exif':'pdf-original',originalSize:original.size};
+    await transaction('readwrite','put',rec);
+    const persistent=await requestPersistentStorage();
+    clearPreview();$('receipt-other-shop').value='';
+    const saving=prepared.compressed?'Imagen procesada: '+Math.round(prepared.fromBytes/1024)+' KB → '+Math.round(prepared.toBytes/1024)+' KB. ':'PDF original conservado. ';
+    message(saving+'Justificante guardado en este dispositivo. '+(persistent?'Almacenamiento persistente concedido.':'No hay garantía de almacenamiento persistente: exporta una copia ZIP.'));
+    await render();
+  }catch(err){message('No se ha guardado el justificante. '+(err?.message||'Comprueba espacio y permisos.'));}
+ }
+ async function render(){displayedURLs.forEach(u=>URL.revokeObjectURL(u));displayedURLs=[];const node=$('receipt-list');node.replaceChildren();try{const recs=await transaction('readonly','all');recs.sort((a,b)=>b.date-a.date);$('receipt-count').textContent=recs.length+' archivos';if(!recs.length){node.append(make('p','Aún no has guardado justificantes.'));return;}for(const rec of recs){const row=make('div');row.className='receipt';const url=URL.createObjectURL(rec.blob);displayedURLs.push(url);if(rec.mime==='application/pdf'||/\.pdf$/i.test(rec.name||'')){const tile=make('div','PDF');tile.className='receipt-image pdf-thumb';row.append(tile);}else{const img=make('img');img.src=url;img.alt='Miniatura del ticket';img.className='receipt-image';row.append(img);}const info=make('div');info.className='receipt-info';info.append(make('strong',rec.name));info.append(make('small',new Date(rec.date).toLocaleString('es-ES')+(rec.shop?' · '+(rec.shop==='OTRO'?'Otra tienda':rec.shop):' · Supermercado sin identificar')+' · '+Math.round((rec.blob?.size||0)/1024)+' KB'));row.append(info);const view=button('Ver',()=>window.open(url,'_blank'));view.className='icon-btn';view.title='Abrir justificante';row.append(view);const del=button('×',async()=>{if(!confirm('¿Eliminar este justificante guardado en este dispositivo?'))return;try{await transaction('readwrite','delete',rec.id);message('Imagen eliminada del almacenamiento local.');await render();}catch(e){message('No se ha podido eliminar.');}});del.className='icon-btn';del.title='Eliminar justificante';del.setAttribute('aria-label','Eliminar justificante '+rec.name);row.append(del);node.append(row);}}catch(e){node.append(make('p','El almacenamiento de justificantes no está disponible en este navegador o al abrir el archivo local.'));$('receipt-count').textContent='No disponible';}}
+ document.querySelectorAll('label[role="button"][for]').forEach(label=>label.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$(label.htmlFor)?.click();}}));
+ ['camera-input','attach-input'].forEach(id=>$(id).addEventListener('change',e=>{preview(e.target.files?.[0]);e.target.value='';}));window.addEventListener('pagehide',()=>displayedURLs.forEach(u=>URL.revokeObjectURL(u)));window.compraReceiptsReload=render;render();
+})();

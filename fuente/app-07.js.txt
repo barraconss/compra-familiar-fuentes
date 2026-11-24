@@ -1,0 +1,35 @@
+
+/* Generador PDF local sin red ni bibliotecas externas. Fuentes estándar PDF /Helvetica (WinAnsi). */
+(()=>{'use strict';
+ const format=new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'});
+ const money=n=>format.format(n/100);
+ const cmap={'€':128,'‚':130,'ƒ':131,'„':132,'…':133,'†':134,'‡':135,'ˆ':136,'‰':137,'Š':138,'‹':139,'Œ':140,'Ž':142,'‘':145,'’':146,'“':147,'”':148,'•':149,'–':150,'—':151,'˜':152,'™':153,'š':154,'›':155,'œ':156,'ž':158,'Ÿ':159};
+ function pdfHex(t){let h='';for(const ch of String(t)){const v=ch.codePointAt(0),code=cmap[ch]??(v<=255?v:63);h+=code.toString(16).padStart(2,'0').toUpperCase();}return '<'+h+'>';}
+ function approxWidth(s,size){let w=0;for(const ch of s)w+=/\s/.test(ch)?0.25:/[ilI.,:;!'`]/.test(ch)?0.25:/[MW@]/.test(ch)?0.84:0.53;return w*size;}
+ function wrap(str,size=9,max=506){const text=String(str).replace(/[\r\n]+/g,' ');const words=text.split(/\s+/);let out=[],line='';for(let word of words){if(!word)continue;let candidate=line?line+' '+word:word;if(approxWidth(candidate,size)>max&&line){out.push(line);line=word;}else line=candidate;while(approxWidth(line,size)>max){let end=Math.max(1,Math.floor(line.length*max/approxWidth(line,size))-1);out.push(line.slice(0,end));line=line.slice(end);}}if(line)out.push(line);return out.length?out:[''];}
+ function build(month,records){if(!/^\d{4}-\d{2}$/.test(month)||!Array.isArray(records))throw Error('Mes o registros no válidos');
+  const pages=[];let cmds=[],y=795;const margin=45, bottom=55;
+  function pushPage(){if(cmds.length)pages.push(cmds.join('\n'));cmds=[];y=795;}
+  function draw(txt,size=10,bold=false,indent=0){for(const line of wrap(txt,size,505-indent)){if(y<bottom+17)pushPage();cmds.push('BT /'+(bold?'F2':'F1')+' '+size+' Tf 1 0 0 1 '+(margin+indent)+' '+y+' Tm '+pdfHex(line)+' Tj ET');y-=(size+6);}}
+  function space(n=8){y-=n;if(y<bottom+17)pushPage();}
+  const dt=new Date(month+'-01T12:00:00');const monthName=new Intl.DateTimeFormat('es-ES',{month:'long',year:'numeric'}).format(dt);
+  const selected=records.slice().sort((a,b)=>a.date.localeCompare(b.date)||a.shop.localeCompare(b.shop));const total=selected.reduce((sum,p)=>sum+p.cents,0);
+  draw('COMPRA FAMILIAR',18,true);draw('Informe de gastos - '+monthName,13,true);draw('Emitido el '+new Date().toLocaleString('es-ES'),8);space();draw('Total del mes: '+money(total)+'  |  '+selected.length+' compras',12,true);space(12);
+  const week=new Map(),day=new Map(),shops=new Map();const short=d=>d.slice(8,10)+'/'+d.slice(5,7);
+  for(const p of selected){day.set(p.date,(day.get(p.date)||0)+p.cents);shops.set(p.shop,(shops.get(p.shop)||0)+p.cents);let d=new Date(p.date+'T12:00:00');d.setDate(d.getDate()-(d.getDay()+6)%7);const key=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');week.set(key,(week.get(key)||0)+p.cents);}
+  draw('RESUMEN POR TIENDAS',11,true);for(const [shop,amt] of [...shops].sort((a,b)=>a[0].localeCompare(b[0])))draw(shop+'  -  '+money(amt),9);space(10);
+  draw('RESUMEN POR SEMANAS (lunes a domingo)',11,true);for(const [key,amt] of [...week].sort((a,b)=>a[0].localeCompare(b[0]))){const d=new Date(key+'T12:00:00');const end=new Date(d);end.setDate(d.getDate()+6);const first=new Date(month+'-01T12:00:00');const last=new Date(first.getFullYear(),first.getMonth()+1,0,12);const from=d<first?first:d,to=end>last?last:end;const iso=x=>x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');draw(short(iso(from))+' - '+short(iso(to))+'  -  '+money(amt),9);}space(10);
+  draw('RESUMEN POR DÍAS',11,true);for(const [date,amt] of [...day].sort((a,b)=>a[0].localeCompare(b[0])))draw(short(date)+'/'+date.slice(0,4)+'  -  '+money(amt),9);space(12);
+  draw('DETALLE DE COMPRAS',11,true);if(!selected.length)draw('Sin compras registradas en este mes.',9);
+  for(const p of selected){space(6);draw(short(p.date)+'/'+p.date.slice(0,4)+' | '+p.shop+' | '+money(p.cents),10,true);if(p.note)draw('Nota: '+p.note,8,false,12);if(Array.isArray(p.lines)&&p.lines.length){for(const l of p.lines)draw('- '+l.name+' x '+l.qty+' a '+money(l.unitCents)+' = '+money(l.subtotalCents),9,false,12);}else draw('Sin desglose por artículos',8,false,12);}
+  if(cmds.length||!pages.length)pushPage();
+  const obj=[null],put=x=>(obj.push(x),obj.length-1);
+  const catalog=put(''),pagesRef=put(''),font1=put('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>'),font2=put('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+  const refs=[];for(let i=0;i<pages.length;i++){const commands=pages[i]+'\nBT /F1 8 Tf 1 0 0 1 45 28 Tm '+pdfHex('Página '+(i+1)+' de '+pages.length)+' Tj ET\n';const stream=put('<< /Length '+commands.length+' >>\nstream\n'+commands+'endstream');refs.push(put('<< /Type /Page /Parent '+pagesRef+' 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 '+font1+' 0 R /F2 '+font2+' 0 R >> >> /Contents '+stream+' 0 R >>'));}
+  obj[catalog]='<< /Type /Catalog /Pages '+pagesRef+' 0 R >>';obj[pagesRef]='<< /Type /Pages /Kids ['+refs.map(n=>n+' 0 R').join(' ')+'] /Count '+refs.length+' >>';
+  const fragments=['%PDF-1.4\n%'+String.fromCharCode(226,227,207,211)+'\n'];let offset=fragments[0].length;const xref=[0];for(let i=1;i<obj.length;i++){xref.push(offset);const fragment=i+' 0 obj\n'+obj[i]+'\nendobj\n';fragments.push(fragment);offset+=fragment.length;}
+  const xrefStart=offset;fragments.push('xref\n0 '+obj.length+'\n0000000000 65535 f \n');for(let i=1;i<obj.length;i++)fragments.push(String(xref[i]).padStart(10,'0')+' 00000 n \n');fragments.push('trailer\n<< /Size '+obj.length+' /Root '+catalog+' 0 R >>\nstartxref\n'+xrefStart+'\n%%EOF\n');
+  const data=fragments.join(''),bytes=new Uint8Array(data.length);for(let i=0;i<data.length;i++)bytes[i]=data.charCodeAt(i)&255;return new Blob([bytes],{type:'application/pdf'});
+ }
+ window.compraReportPDF={build};
+})();

@@ -1,0 +1,14 @@
+
+(()=>{'use strict';
+ const select=document.getElementById('maps-store');
+ const go=document.getElementById('maps-open');
+ const help=document.getElementById('maps-help');
+ go.addEventListener('click',()=>{
+  const store=select.value;
+  if(!store){help.textContent='Elige primero uno de los cinco supermercados.';select.focus();return;}
+  const url='https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(store+' supermercado cerca de mí');
+  help.textContent='Abriendo la búsqueda de '+store+' en Google Maps…';
+  // La ubicación se gestiona en Maps (si el usuario concede el permiso), no en este HTML.
+  const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener noreferrer';document.body.append(a);a.click();a.remove();
+ });
+})();

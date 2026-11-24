@@ -1,0 +1,16 @@
+/* v0.18 CANDIDATA (NO desplegada): selector de lector. Por defecto SIGUE el lector estandar (Tesseract, v0.17.0). El lector avanzado (Paddle tiny) solo se usa si
+   la persona lo eligio Y lo descargo, y solo para fotos (los PDF siguen por pdf.js/Tesseract). Cualquier fallo del avanzado -> cae al estandar con aviso; si el avanzado
+   no deja el total VERIFICADO se anade tambien la lectura estandar y el analizador elige (las protecciones frente a importes falsos son las mismas para ambos). */
+const KEY='cf_ocr_engine';
+export function getEnginePref(){try{return localStorage.getItem(KEY)==='paddle'?'paddle':'tesseract';}catch{return 'tesseract';}}
+export function setEnginePref(v){try{localStorage.setItem(KEY,v==='paddle'?'paddle':'tesseract');}catch{}}
+export function paddleEnabled(){try{return window.CF_CONFIG?.paddle===true||window.CF_SYNC_CONFIG?.paddle===true;}catch{return false;}}
+const isImage=f=>/^image\//.test(f&&f.type||'')||/\.(jpe?g|png)$/i.test(f&&f.name||'');
+export async function readTicketAuto(file,opts={}){let note=null;const std=async()=>{const {readTicket}=await import('./receipt-ocr-engine.mjs');return readTicket(file,opts);};
+ if(paddleEnabled()&&getEnginePref()==='paddle'&&isImage(file)){
+  try{const P=await import('./receipt-ocr-paddle.mjs'),st=await P.paddleStatus();if(!st.installed)throw Error('el lector avanzado no está descargado');
+   const r=await P.readTicketPaddle(file,opts);
+   if(opts.accept&&!opts.accept(r.lines)){opts.onProgress&&opts.onProgress({status:'Total sin verificar: repasando con el lector estándar…'});try{const t=await std();return {...t,passes:[...r.passes,...(t.passes||[t.lines])],engine:'paddle+tesseract',stats:{...t.stats,paddleMs:r.stats.ms}};}catch(e2){if(/cancelada/.test(e2&&e2.message||''))throw e2;return r;}}
+   return r;}
+  catch(e){if(opts.signal&&opts.signal.aborted||/cancelada/.test(e&&e.message||''))throw e;note='El lector avanzado no funcionó ('+(e&&e.message||'error')+'): se usó el estándar.';opts.onProgress&&opts.onProgress({status:note});}}
+ const t=await std();t.engine='tesseract';if(note)t.fallback=note;return t;}

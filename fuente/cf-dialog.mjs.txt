@@ -1,0 +1,42 @@
+/* Diálogos propios accesibles: sustituyen a los diálogos nativos del navegador (confirmación y petición de texto) en el panel compartido.
+   <dialog> modal: foco atrapado, Escape y toque fuera cancelan, teclado completo, controles >=44 px, sin dependencias.
+   La lógica de negocio (validación, mutate) NO está aquí: el llamador decide qué hacer con el resultado. */
+export const UNITS=['ud','kg','g','l','ml'];
+let seq=0;
+export function openDialog({title,body='',fields=[],confirmLabel='Aceptar',cancelLabel='Cancelar',focus='field',validate=null,fallbackFocus=null,single=false}){
+ return new Promise(resolve=>{
+  const id='cf-dlg-'+(++seq),opener=document.activeElement;
+  const dlg=document.createElement('dialog');dlg.className='cf-dlg';dlg.setAttribute('aria-labelledby',id+'-t');dlg.setAttribute('aria-describedby',id+'-d');
+  const form=document.createElement('form');form.noValidate=true;
+  const h=document.createElement('h2');h.id=id+'-t';h.textContent=title;
+  const p=document.createElement('p');p.id=id+'-d';p.textContent=body;
+  form.append(h,p);
+  for(const f of fields){const lab=document.createElement('label');lab.textContent=f.label;let el;
+   if(f.type==='select'){el=document.createElement('select');for(const o of f.options){const op=document.createElement('option');op.value=op.textContent=o;el.append(op);}}
+   else{el=document.createElement('input');el.type='text';if(f.inputmode)el.inputMode=f.inputmode;el.autocomplete='off';}
+   el.name=f.name;el.value=f.value??'';lab.append(el);form.append(lab);}
+  const err=document.createElement('p');err.className='cf-dlg-err';err.setAttribute('role','alert');err.hidden=true;form.append(err);
+  const actions=document.createElement('div');actions.className='cf-dlg-actions';
+  const cancel=document.createElement('button');cancel.type='button';cancel.textContent=cancelLabel;
+  const ok=document.createElement('button');ok.type='submit';ok.textContent=confirmLabel;if(single)actions.append(ok);else actions.append(cancel,ok);form.append(actions);dlg.append(form);
+  let done=false;
+  const finish=v=>{if(done)return;done=true;ok.disabled=cancel.disabled=true;try{dlg.close();}catch{}dlg.remove();
+   try{const t=opener&&opener.isConnected&&opener!==document.body?opener:fallbackFocus;if(t&&t.focus)t.focus();}catch{}resolve(v);};
+  cancel.addEventListener('click',()=>finish(null));
+  // Bucle de foco: Tab desde el último control vuelve al primero y Mayús+Tab desde el primero va al último (el foco no sale hacia el navegador).
+  dlg.addEventListener('keydown',e=>{if(e.key!=='Tab')return;const f=[...dlg.querySelectorAll('button:not(:disabled),input,select')];if(!f.length)return;const first=f[0],last=f[f.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}});
+  dlg.addEventListener('cancel',e=>{e.preventDefault();finish(null);});
+  dlg.addEventListener('click',e=>{if(e.target===dlg)finish(null);});
+  form.addEventListener('submit',e=>{e.preventDefault();if(done)return;const vals={};for(const f of fields)vals[f.name]=form.elements[f.name].value;
+   if(validate){const msg=validate(vals);if(msg){err.textContent=msg;err.hidden=false;const first=fields[0]&&form.elements[fields[0].name];if(first)first.focus();return;}}
+   finish(vals);});
+  document.body.append(dlg);dlg.showModal();
+  if(single||focus==='ok')ok.focus();else if(focus==='cancel'||!fields.length)cancel.focus();else{const first=form.elements[fields[0].name];first.focus();if(first.select)first.select();}
+ });
+}
+/* «Confirmar pagado»: el foco inicial queda en Cancelar para evitar confirmaciones accidentales con Enter. */
+export const confirmBuy=(name,fallbackFocus)=>openDialog({title:'¿Marcar como pagado?',body:'Artículo «'+name+'». Se marca como pagado para las dos personas. No registra el gasto: para eso usa Compras.',confirmLabel:'Sí, pagado',cancelLabel:'Cancelar',focus:'cancel',fallbackFocus}).then(v=>v!==null);
+/* «Cantidad / unidad»: devuelve {quantity,unit} sin validar el valor numérico (lo valida el llamador con validateQuantity). */
+export const editQuantityUnit=(x,validate,fallbackFocus)=>openDialog({title:'Cantidad y unidad',body:'Artículo «'+x.name+'». La cantidad admite hasta tres decimales (puedes usar coma).',fields:[{name:'quantity',label:'Cantidad',value:String(x.quantity),inputmode:'decimal'},{name:'unit',label:'Unidad',type:'select',options:UNITS,value:UNITS.includes(x.unit)?x.unit:'ud'}],confirmLabel:'Guardar',cancelLabel:'Cancelar',validate,fallbackFocus});
+/* Aviso informativo con un solo boton (p. ej. conflicto entre dos personas): no se pierde aunque la lista se redibuje. */
+export const infoDialog=(title,body,fallbackFocus)=>openDialog({title,body,confirmLabel:'Entendido',single:true,focus:'ok',fallbackFocus}).then(()=>true);

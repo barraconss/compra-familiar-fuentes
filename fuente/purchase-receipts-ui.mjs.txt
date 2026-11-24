@@ -1,0 +1,62 @@
+/* v0.13 candidata (NO desplegada): justificantes por compra. Camara, adjuntar imagen/PDF, lista y descarga. Requiere SQL 008 aplicado.
+   Sin OCR. Archivos en el bucket privado cf-receipts; se valida el tipo real y se comprime la foto antes de subir (quita metadatos EXIF). */
+import {openDialog} from './cf-dialog.mjs';
+import {buildBackup,verifyBackupZip} from './receipts-backup.mjs';
+import {validateReceipt,verifyDownload,MAX_BYTES,MAX_PER_PURCHASE} from './receipts-core.mjs';
+const BUCKET='cf-receipts',TARGET=1600000;
+const kb=n=>n<1048576?Math.max(1,Math.round(n/1024))+' KB':(n/1048576).toFixed(1).replace('.',',')+' MB';
+async function shrink(file){ // fotos grandes -> JPEG (<= ~1,6 MB, lado mayor 2000 px); PDF y fotos pequenas no se tocan.
+ if(!file.type.startsWith('image/')||file.size<=TARGET)return file;
+ const bmp=await createImageBitmap(file,{imageOrientation:'from-image'});const sc=Math.min(1,2000/Math.max(bmp.width,bmp.height)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(bmp.width*sc));c.height=Math.max(1,Math.round(bmp.height*sc));c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);bmp.close?.();
+ for(const q of [0.82,0.7,0.55]){const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',q));if(blob&&blob.size<=Math.min(TARGET,MAX_BYTES))return new File([blob],file.name.replace(/\.\w+$/,'')+'.jpg',{type:'image/jpeg'});}
+ throw Error('No se pudo reducir la foto por debajo del limite. Prueba con otra o usa PDF.');}
+/* Copia de seguridad de los justificantes del hogar (ZIP con manifiesto SHA-256) y comprobacion de una copia guardada. */
+export function addBackupControls(parent,ctx){
+ const {shared,perr,today}=ctx,mk=(label,fn)=>{const b=document.createElement('button');b.type='button';b.className='secondary';b.textContent=label;b.addEventListener('click',fn);return b;};
+ /* v0.14.3 candidata: estos botones viven en la pestana Informes, pero el 'say' general escribe en #cf-pur-msg/#cf-pur-err (pestana Compras, oculta): el resultado nunca se veia.
+    Linea de estado PROPIA junto a los botones; el resultado de comprobar/guardar se muestra donde se pulso. */
+ const out=document.createElement('p');out.className='cf-backup-msg';out.setAttribute('role','status');out.setAttribute('aria-live','polite');
+ const say=(m,e=false)=>{out.textContent=m||'';out.classList.toggle('cf-cloud-error',!!e);if(e&&m)try{out.scrollIntoView({block:'nearest'});}catch{}};
+ const save=mk('Guardar copia de los justificantes',async()=>{const s=shared.scope();if(!s.verified){say('Sin conexión: no se puede hacer la copia ahora.',true);return;}save.disabled=true;
+  try{say('Descargando justificantes para la copia…');const {data,error}=await shared.db.rpc('cf_receipts_export',{p_home:s.home});if(error)throw error;
+   const out=await buildBackup({home:s.home,receipts:data.receipts||[],getBytes:async id=>{const r=await shared.db.storage.from(BUCKET).download(s.home+'/'+id);if(r.error)throw r.error;return new Uint8Array(await r.data.arrayBuffer());}});
+   const chk=await verifyBackupZip(out.zip,{expectedIds:(data.receipts||[]).filter(r=>r.status!=='pending').map(r=>r.id)});if(!chk.ok)throw Error('La copia recién creada no supera su propia comprobación: '+chk.problems[0]);
+   const u=URL.createObjectURL(new Blob([out.zip],{type:'application/zip'})),a=document.createElement('a');a.href=u;a.download='compra-familiar-justificantes-'+today()+'.zip';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);
+   say('Copia de justificantes guardada y comprobada: '+out.count+' archivos ('+kb(out.bytes)+'). Guárdala fuera del teléfono, junto a la copia del historial.');}
+  catch(e){say(e&&e.message&&!e.code?e.message:perr(e),true);}finally{save.disabled=false;}});
+ const input=document.createElement('input');input.type='file';input.hidden=true;input.accept='.zip,application/zip';
+ input.addEventListener('change',async()=>{const f=input.files&&input.files[0];input.value='';if(!f)return;say('Comprobando «'+f.name+'»… (se hace en este teléfono, no necesita conexión)');try{const r=await verifyBackupZip(new Uint8Array(await f.arrayBuffer()));const foreign=!r.ok&&/^(No es un ZIP|Falta manifest|manifest\.json ilegible|Esquema desconocido)/.test(r.problems[0]||'');say(r.ok?'VÁLIDA: copia correcta. '+r.files+' justificantes con su huella verificada. No se ha restaurado nada.':foreign?'NO SE PUDO EXAMINAR: el archivo no es una copia de justificantes de esta app ('+r.problems[0]+'). No se ha dado por válido.':'ALTERADA O INCOMPLETA: la copia NO es válida. '+r.problems.slice(0,3).join(' · '),!r.ok);}catch(e){say('NO SE PUDO EXAMINAR el archivo ('+(e&&e.message||'error')+'). No se ha dado por válido ni se ha cambiado nada. Vuelve a elegirlo.',true);}});
+ const chk=mk('Comprobar una copia de justificantes',()=>input.click());parent.append(save,chk,input,out);return {save,chk};}
+/* Registra, sube y confirma UN justificante (misma secuencia que el boton Adjuntar). Lanza el error original; no guarda nada a medias (queda pendiente y sin confirmar). */
+export async function storeReceipt(shared,home,purchaseId,file,existing=0){
+ const v=await validateReceipt(await shrink(file),{existing});if(!v.ok)throw Error(v.error);
+ const op=crypto.randomUUID(),{data:r,error}=await shared.db.rpc('cf_receipt_register',{p_home:home,p_purchase:purchaseId,p_operation:op,p_name:v.name,p_mime:v.mime,p_size:v.size});if(error)throw error;
+ const up=await shared.db.storage.from(BUCKET).upload(r.path,new Blob([v.bytes],{type:v.mime}),{contentType:v.mime,upsert:false});if(up.error)throw up.error;
+ const c=await shared.db.rpc('cf_receipt_confirm',{p_home:home,p_id:r.id,p_sha256:v.sha256});if(c.error)throw c.error;return {id:r.id,size:v.size};}
+export function attachReceipts(card,purchase,ctx){
+ const {shared,say,perr,who}=ctx,det=document.createElement('details'),sm=document.createElement('summary'),list=document.createElement('div'),bar=document.createElement('div');
+ det.className='cf-rec';sm.textContent='📎 Justificantes';det.append(sm,list,bar);card.append(det);
+ let items=[],loaded=false,busy=false;
+ const home=()=>shared.scope().home,ok=()=>shared.scope().verified&&!busy;
+ const mk=(label,cls,fn)=>{const b=document.createElement('button');b.type='button';b.className=cls;b.textContent=label;b.addEventListener('click',fn);return b;};
+ function input(capture){const i=document.createElement('input');i.type='file';i.hidden=true;i.accept=capture?'image/*':'image/jpeg,image/png,image/webp,application/pdf,.pdf';if(capture)i.setAttribute('capture','environment');i.addEventListener('change',()=>{const f=i.files&&i.files[0];i.value='';if(f)upload(f);});return i;}
+ const cam=input(true),pick=input(false);
+ async function load(){if(!shared.scope().verified)return;try{const {data,error}=await shared.db.rpc('cf_receipts_list',{p_home:home(),p_purchase:purchase.id,p_include_void:true});if(error)throw error;items=data||[];loaded=true;render();}catch(e){say(perr(e),true);}}
+ function render(){list.replaceChildren();const live=items.filter(x=>x.status==='ready');if(!items.length){const p=document.createElement('p');p.textContent='Sin justificantes en esta compra.';list.append(p);}
+  for(const r of items){const row=document.createElement('div');row.className='cf-rec-row'+(r.status==='void'?' void':'');row.textContent=r.file_name+' · '+kb(r.size_bytes)+' · subido por '+who(r.created_by)+' el '+String(r.created_at).slice(0,10).split('-').reverse().join('/')+(r.status==='void'?' · QUITADO'+(r.void_reason?' ('+r.void_reason+')':''):'')+(r.purchase_id!==purchase.id?' · de una versión anterior de la compra':'');
+   if(r.status==='ready'){row.append(' ',mk('Ver / descargar','secondary',()=>download(r)),' ',mk('Quitar','secondary',()=>remove(r)));if(ctx.onOcr&&/^(image\/(jpeg|png)|application\/pdf)$/.test(r.mime))row.append(' ',mk('🧾 Leer para corregir','secondary',()=>readLinked(r)));}list.append(row);}
+  for(const b of bar.querySelectorAll('button'))b.disabled=!ok()||live.length>=MAX_PER_PURCHASE;}
+ /* v0.13.1: al volver de la camara/selector la app revalida la sesion y durante unos segundos esta "no verificada"; se espera a que termine (shared.ready) en vez de rechazar al instante. */
+ async function gate(){if(busy)return false;let s=shared.scope();if(!s.verified&&typeof shared.ready==='function'){say('Comprobando la sesión…');s=await shared.ready();}return !!s.verified&&!busy;}
+ const whyNot=()=>typeof navigator!=='undefined'&&navigator.onLine===false?'Sin conexión: no se puede adjuntar ahora. Vuelve a intentarlo cuando tengas internet.':'No se pudo verificar la sesión (la conexión es lenta o ha fallado): no se sube nada. Espera unos segundos y vuelve a intentarlo.';
+ async function upload(file){if(!(await gate())){say(whyNot(),true);return;}busy=true;render();
+  try{say('Preparando justificante…');const st=await storeReceipt(shared,home(),purchase.id,file,items.filter(x=>x.status==='ready').length);say('Justificante guardado ('+kb(st.size)+'). Los dos teléfonos lo verán.');await load();}
+  catch(e){say((e&&e.message&&!e.code?e.message:perr(e)),true);}finally{busy=false;render();}}
+ async function download(r){if(!(await gate())){say('Sin conexión o sesión sin verificar: no se puede descargar ahora. Vuelve a intentarlo en unos segundos.',true);return;}try{const {data,error}=await shared.db.storage.from(BUCKET).download(home()+'/'+r.id);if(error)throw error;const bytes=new Uint8Array(await data.arrayBuffer());if(!(await verifyDownload(bytes,r.sha256)))throw Error('El archivo descargado no coincide con su huella: no se abre. Avisa al titular.');
+   const u=URL.createObjectURL(new Blob([bytes],{type:r.mime})),a=document.createElement('a');a.href=u;a.download=r.file_name;a.target='_blank';a.rel='noopener';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);}catch(e){say(e&&e.message&&!e.code?e.message:perr(e),true);}}
+ /* Ticket ya vinculado a esta compra: se descarga (con comprobacion de huella) y se lee SIN crear otra compra ni volver a subirlo; lo recibe la correccion de la compra existente. */
+ async function readLinked(r){if(!(await gate())){say('Sin conexión o sesión sin verificar: no se puede leer ahora. Vuelve a intentarlo en unos segundos.',true);return;}try{say('Descargando el justificante para leerlo…');const {data,error}=await shared.db.storage.from(BUCKET).download(home()+'/'+r.id);if(error)throw error;const bytes=new Uint8Array(await data.arrayBuffer());if(!(await verifyDownload(bytes,r.sha256)))throw Error('El archivo descargado no coincide con su huella: no se lee. Avisa al titular.');await ctx.onOcr(purchase,new File([bytes],r.file_name,{type:r.mime}),r);}catch(e){say(e&&e.message&&!e.code?e.message:perr(e),true);}}
+ async function remove(r){if(!ok())return;const v=await openDialog({title:'¿Quitar este justificante?',body:r.file_name+'. Se marca como quitado con tu nombre y deja de mostrarse como vigente; el archivo se conserva en el historial.',fields:[{name:'reason',label:'Motivo (opcional)',value:''}],confirmLabel:'Sí, quitar',cancelLabel:'Cancelar',focus:'cancel'});if(v===null)return;busy=true;render();try{const {error}=await shared.db.rpc('cf_receipt_void',{p_home:home(),p_id:r.id,p_reason:String(v.reason||'').trim().slice(0,300)});if(error)throw error;await load();}catch(e){say(perr(e),true);}finally{busy=false;render();}}
+ bar.className='cf-rec-bar';bar.append(mk('📷 Fotografiar ticket','secondary',()=>cam.click()),mk('📄 Adjuntar imagen o PDF','secondary',()=>pick.click()),cam,pick);
+ det.addEventListener('toggle',()=>{if(det.open&&!loaded)load();else render();});render();
+ return {reload:load};}

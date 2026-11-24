@@ -1,0 +1,34 @@
+/* Candidata FAMILIAR: pestañas Lista / En la tienda / Compras / Informes sobre los mismos modulos ya verificados (sync-bridge, sync-purchases).
+   Sin almacenamiento propio de datos: solo recuerda la pestaña (sessionStorage, opcional). El nombre del hogar se lee del servidor (RLS: solo miembros). */
+import {shared} from './sync-bridge.mjs';
+const $=id=>document.getElementById(id);
+const conf=window.CF_SYNC_CONFIG||{};
+const tabs=[...document.querySelectorAll('[data-fam-tab]')];
+const ids=['lista','tienda','compras','informes'];
+function show(name){if(!ids.includes(name))name='lista';
+ for(const b of tabs){const on=b.dataset.famTab===name;b.setAttribute('aria-selected',on?'true':'false');b.tabIndex=on?0:-1;}
+ $('fam-lista').hidden=name!=='lista';$('fam-tienda').hidden=name!=='tienda';
+ const pur=name==='compras'||name==='informes';$('cf-pur').hidden=!pur;$('cf-pur-compras').hidden=name!=='compras';$('cf-pur-informes').hidden=name!=='informes';
+ try{sessionStorage.setItem('cf-fam-tab',name);}catch{}}
+for(const b of tabs){b.addEventListener('click',()=>show(b.dataset.famTab));
+ b.addEventListener('keydown',e=>{if(e.key!=='ArrowRight'&&e.key!=='ArrowLeft')return;e.preventDefault();const i=tabs.indexOf(b),n=tabs[(i+(e.key==='ArrowRight'?1:tabs.length-1))%tabs.length];show(n.dataset.famTab);n.focus();});}
+/* v0.14.4: «Ya he pagado: registrar el ticket» SOLO cambia de pestaña (Caja y tickets) y deja el foco en su titulo. No crea ni envia nada. */
+const pay=$('cf-pay-go');if(pay)pay.addEventListener('click',()=>{show('compras');const h=$('cf-pur-compras').querySelector('h2');if(h){h.tabIndex=-1;h.focus();try{h.scrollIntoView({block:'start'});}catch{}}});
+/* v0.15.1: «Buscar tienda» (funcion historica, Maestro §26): elegir ALDI, Mercadona, Carrefour, Alcampo, Lidl u otra tienda y abrir su busqueda en Google Maps.
+   Solo abre Maps en otra pestaña con una busqueda de texto: no guarda ni envia datos de la familia, ni la ubicacion (la gestiona Maps si el usuario da permiso). */
+(()=>{const ms=$('cf-maps-store'),mo=$('cf-maps-open'),mh=$('cf-maps-help'),mx=$('cf-maps-other'),mw=$('cf-maps-other-wrap');if(!ms||!mo)return;const base=mh.textContent;
+ ms.addEventListener('change',()=>{mw.hidden=ms.value!=='__otra';mh.textContent=base;if(ms.value==='__otra')mx.focus();});
+ mo.addEventListener('click',()=>{let name,q;
+  if(!ms.value){mh.textContent='Elige primero un supermercado o «Otra tienda».';ms.focus();return;}
+  if(ms.value==='__otra'){name=mx.value.trim().replace(/\s+/g,' ').slice(0,60);if(!name){mh.textContent='Escribe el nombre de la tienda.';mx.focus();return;}q=name+' cerca de mí';}
+  else{name=ms.value;q=name+' supermercado cerca de mí';}
+  if(!navigator.onLine){mh.textContent='Sin conexión: Google Maps necesita internet.';return;}
+  mh.textContent='Abriendo la búsqueda de '+name+' en Google Maps…';
+  const a=document.createElement('a');a.href='https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(q);a.target='_blank';a.rel='noopener noreferrer';document.body.append(a);a.click();a.remove();});})();let saved='lista';try{saved=sessionStorage.getItem('cf-fam-tab')||'lista';}catch{}show(saved);
+$('fam-foot').textContent='Compra Familiar '+(document.documentElement.dataset.version||'')+' · hogar compartido';
+let shownFor='';
+async function homeName(){const s=shared.scope();if(!s.verified||!shared.db){if(!s.uid){$('fam-home').textContent='Hogar compartido';shownFor='';}return;}
+ if(shownFor===s.home)return;shownFor=s.home;
+ try{const {data,error}=await shared.db.from('cf_households').select('name').eq('id',s.home).limit(1);if(error)throw error;const n=data&&data[0]&&data[0].name;if(n)$('fam-home').textContent='Hogar: '+n;}catch{shownFor='';}}
+shared.onChange(()=>{homeName();});
+if(!conf.householdId){const n=$('cf-cloud-notice');n.textContent='Esta instalación no tiene un hogar asignado. Avisa al titular.';n.hidden=false;}

@@ -1,0 +1,83 @@
+
+(()=>{'use strict';
+ const PURCHASES='compra-familiar-purchases-v04';
+ const $=id=>document.getElementById(id);
+ let purchases=[];
+ const centsFormat=new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'});
+ const fmt=n=>centsFormat.format(n/100);
+ const validDate=s=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&!Number.isNaN(new Date(s+'T12:00:00').getTime())&&new Date(s+'T12:00:00').toISOString().slice(0,10)===s;
+ const validItem=x=>x&&typeof x.id==='string'&&typeof x.shop==='string'&&validDate(x.date)&&Number.isSafeInteger(x.cents)&&x.cents>=0&&x.cents<=100000000&&typeof x.note==='string'&&(!x.status||['confirmed','void'].includes(x.status))&&(!('lines' in x)||(Array.isArray(x.lines)&&x.lines.length<=250&&x.lines.every(y=>y&&typeof y.name==='string'&&y.name.length>0&&y.name.length<=120&&Number.isFinite(y.qty)&&y.qty>0&&y.qty<=999&&Math.abs(y.qty*1000-Math.round(y.qty*1000))<1e-7&&Number.isSafeInteger(y.unitCents)&&Math.abs(y.unitCents)<=100000000&&Number.isSafeInteger(y.subtotalCents)&&Math.abs(y.subtotalCents)<=100000000&&((y.kind==='adjustment'&&y.qty===1&&y.unitCents<0&&y.subtotalCents===y.unitCents)||(y.kind!=='adjustment'&&y.unitCents>0&&y.subtotalCents>0&&(y.manualSubtotal===true||y.subtotalCents===Math.round(y.qty*y.unitCents)))))&&x.lines.reduce((a,y)=>a+y.subtotalCents,0)===x.cents));
+ function save(){try{localStorage.setItem(PURCHASES,JSON.stringify(purchases));return true;}catch(e){alert('No se pueden guardar las compras en este navegador.');return false;}}
+ function load(){try{const v=JSON.parse(localStorage.getItem(PURCHASES)||'[]');purchases=Array.isArray(v)?v.filter(validItem):[];}catch(e){purchases=[];}}
+ function parseCents(raw){const s=String(raw).trim().replace(/\s/g,'').replace('€','');let normalized;if(/^(?:\d{1,3}(?:\.\d{3})+|\d{1,8})(?:,\d{1,2})?$/.test(s))normalized=s.replace(/\./g,'').replace(',','.');else if(/^\d{1,8}(?:[.,]\d{1,2})?$/.test(s))normalized=s.replace(',','.');else return null;const parts=normalized.split('.');const cents=Number(parts[0])*100+Number((parts[1]||'').padEnd(2,'0'));return Number.isSafeInteger(cents)&&cents>0&&cents<=100000000?cents:null;}
+ const today=()=>{let d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+
+ const validLine=x=>x&&typeof x.name==='string'&&x.name.trim().length>0&&x.name.length<=120&&Number.isFinite(x.qty)&&x.qty>0&&x.qty<=999&&Math.abs(x.qty*1000-Math.round(x.qty*1000))<1e-7&&Number.isSafeInteger(x.unitCents)&&Math.abs(x.unitCents)<=100000000&&Number.isSafeInteger(x.subtotalCents)&&Math.abs(x.subtotalCents)<=100000000&&((x.kind==='adjustment'&&x.qty===1&&x.unitCents<0&&x.subtotalCents===x.unitCents)||(x.kind!=='adjustment'&&x.unitCents>0&&x.subtotalCents>0&&(x.manualSubtotal===true||x.subtotalCents===Math.round(x.qty*x.unitCents))));
+ function lineInput(label,kind,placeholder){let lab=document.createElement('label');lab.textContent=label;let input=document.createElement('input');input.type='text';input.placeholder=placeholder;input.setAttribute('data-line-field',kind);input.required=true;lab.append(input);return lab;}
+ function parsePositiveCents(raw){return parseCents(raw);}
+ function parseQuantity(raw){const txt=String(raw).trim().replace(',','.');if(!/^(?:\d{1,3})(?:\.\d{1,3})?$/.test(txt))return null;const n=Number(txt);return Number.isFinite(n)&&n>0&&n<=999?n:null;}
+ function addLine(name='',qty='1',unit='',kind='product',subtotal=''){
+  const box=mk('div','purchase-line'+(kind==='adjustment'?' adjustment':''));box.dataset.kind=kind;
+  const n=lineInput(kind==='adjustment'?'Motivo del ajuste':'Artículo','name',kind==='adjustment'?'Ej. Cupón descuento':'Ej. Manzanas'),
+        q=lineInput(kind==='adjustment'?'Cantidad fija':'Cantidad (uds. o kg)','qty',kind==='adjustment'?'1':'0,645'),
+        p=lineInput(kind==='adjustment'?'Importe a descontar €':'Precio unit. €','unit','3,25'),
+        sub=kind==='adjustment'?null:lineInput('Subtotal exacto € (opcional)','subtotal','Ej. 1,88');
+  n.querySelector('input').maxLength=120;n.querySelector('input').value=name;
+  q.querySelector('input').inputMode='decimal';q.querySelector('input').value=qty;
+  if(kind==='adjustment'){q.querySelector('input').readOnly=true;q.querySelector('input').value='1';}
+  p.querySelector('input').inputMode='decimal';p.querySelector('input').value=unit;
+  if(sub){sub.querySelector('input').inputMode='decimal';sub.querySelector('input').required=false;sub.querySelector('input').value=subtotal;}
+  const del=mk('button','line-delete','×');del.type='button';del.title='Quitar línea';del.setAttribute('aria-label','Quitar línea de esta compra');del.onclick=()=>{box.remove();sumLines();};
+  box.append(n,q,p);if(sub)box.append(sub);box.append(del);$('purchase-lines').append(box);
+  for(const input of box.querySelectorAll('input'))input.addEventListener('input',sumLines);sumLines();
+ }
+ function getLines(){const nodes=[...$('purchase-lines').querySelectorAll('.purchase-line')],lines=[];
+  for(const node of nodes){
+   const get=k=>node.querySelector('[data-line-field="'+k+'"]')?.value.trim()||'';
+   const name=get('name'),kind=node.dataset.kind==='adjustment'?'adjustment':'product';
+   if(!name||name.length>120)throw Error('Introduce un nombre o motivo válido.');
+   const qty=kind==='adjustment'?1:parseQuantity(get('qty'));
+   if(qty===null)throw Error('Cantidad inválida en '+name+'. Indica hasta 3 decimales, por ejemplo 0,645.');
+   const price=parsePositiveCents(get('unit'));
+   if(price===null)throw Error('Revisa el importe unitario o descuento de '+name+'.');
+   let line;
+   if(kind==='adjustment')line={name,kind,qty:1,unitCents:-price,subtotalCents:-price};
+   else{
+    const explicit=get('subtotal');const precise=explicit!=='';
+    const amount=precise?parsePositiveCents(explicit):Math.round(qty*price);
+    if(amount===null||amount<=0)throw Error('Subtotal inválido en '+name+'.');
+    line={name,qty,unitCents:price,subtotalCents:amount};
+    if(precise)line.manualSubtotal=true;
+   }
+   if(!validLine(line))throw Error('Línea no válida: '+name);lines.push(line);
+  }
+  return lines;
+ }
+ function sumLines(){const output=$('purchase-line-summary'),nodes=$('purchase-lines').querySelectorAll('.purchase-line');
+  if(!nodes.length){output.className='purchase-sum';output.textContent='Sin desglose: se guardará solo el importe total.';return;}
+  try{const lines=getLines(),total=lines.reduce((sum,x)=>sum+x.subtotalCents,0),entered=parseCents($('purchase-amount').value);
+   output.className='purchase-sum'+(entered!==null&&entered!==total?' purchase-mismatch':'');
+   output.textContent='Suma de '+lines.length+' líneas: '+fmt(total)+(entered!==null&&entered!==total?' · Diferencia: '+fmt(entered-total)+' (revisa importes y descuentos)':' · Comprueba que coincide con el total del ticket.');
+  }catch(err){output.className='purchase-sum purchase-mismatch';output.textContent=err.message;}
+ }
+ $('purchase-add-line').addEventListener('click',()=>addLine());$('purchase-add-adjustment').addEventListener('click',()=>addLine('Cupón o descuento','1','','adjustment'));$('purchase-amount').addEventListener('input',sumLines);
+
+ function mk(tag,cl,txt){let x=document.createElement(tag);if(cl)x.className=cl;if(txt!==undefined)x.textContent=txt;return x;}
+ function weekOf(date){const d=new Date(date+'T12:00:00');const n=(d.getDay()+6)%7;d.setDate(d.getDate()-n);const monday=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');d.setDate(d.getDate()+6);const sunday=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');return {key:monday,label:monday.split('-').reverse().slice(0,2).join('/')+' – '+sunday.split('-').reverse().slice(0,2).join('/')};}
+ function row(parent,label,cents,detail){let d=mk('div','report-row');let a=mk('span','',label);d.append(a);if(detail)a.append(mk('span','',detail));d.append(mk('strong','',fmt(cents)));parent.append(d);}
+ function render(){const month=$('expense-month').value||today().slice(0,7);let v=purchases.filter(p=>p.status!=='void'&&p.date.slice(0,7)===month).sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt-a.createdAt);const total=v.reduce((a,b)=>a+b.cents,0);$('expense-total').textContent=fmt(total);$('expense-count').textContent=v.length+' compra'+(v.length===1?'':'s')+' registrada'+(v.length===1?'':'s');const label=new Intl.DateTimeFormat('es-ES',{year:'numeric',month:'long'}).format(new Date(month+'-01T12:00:00'));$('report-month-head').textContent='COMPRA FAMILIAR · Informe '+label+' · Generado '+new Date().toLocaleString('es-ES');
+ const weeks=new Map(),days=new Map();v.forEach(p=>{const w=weekOf(p.date);const mon=new Date(w.key+'T12:00:00'),sun=new Date(mon);sun.setDate(mon.getDate()+6);const monthFirst=new Date(month+'-01T12:00:00'),monthLast=new Date(monthFirst.getFullYear(),monthFirst.getMonth()+1,0,12);const lower=mon<monthFirst?monthFirst:mon,upper=sun>monthLast?monthLast:sun;const dateFmt=x=>String(x.getDate()).padStart(2,'0')+'/'+String(x.getMonth()+1).padStart(2,'0');weeks.set(w.key,{label:dateFmt(lower)+' – '+dateFmt(upper),total:(weeks.get(w.key)?.total||0)+p.cents});days.set(p.date,(days.get(p.date)||0)+p.cents);});
+ const wnode=$('weekly-breakdown');wnode.replaceChildren();if(!weeks.size)wnode.append(mk('p','expenses-note','Sin movimientos este mes.'));[...weeks].sort((a,b)=>a[0].localeCompare(b[0])).forEach(([k,x])=>row(wnode,x.label,x.total));
+ const dnode=$('daily-breakdown');dnode.replaceChildren();if(!days.size)dnode.append(mk('p','expenses-note','Sin movimientos este mes.'));[...days].sort((a,b)=>a[0].localeCompare(b[0])).forEach(([k,val])=>row(dnode,k.split('-').reverse().join('/'),val));
+ const list=$('purchase-list');list.replaceChildren();if(!v.length)list.append(mk('p','expenses-note','Aún no hay compras registradas.'));v.forEach(p=>{const div=mk('div','report-entry');const details=mk('div');details.append(mk('strong','',p.shop));details.append(mk('span','',p.date.split('-').reverse().join('/')+(p.note?' · '+p.note:'')));if(Array.isArray(p.lines)&&p.lines.length){const linesText=p.lines.map(l=>(l.kind==='adjustment'?'Descuento/ajuste: ':'')+l.name+' × '+String(l.qty).replace('.',',')+' · '+fmt(l.unitCents)+' = '+fmt(l.subtotalCents)).join('\n');details.append(mk('div','purchase-entry-lines',linesText));}else{details.append(mk('span','','Sin desglose por artículos'));}div.append(details);div.append(mk('strong','report-total',fmt(p.cents)));let b=mk('button','','×');b.type='button';b.title='Anular compra';b.setAttribute('aria-label','Anular compra '+p.shop+' de '+p.date);b.onclick=()=>{if(!confirm('¿Anular esta compra? Se conserva en el registro pero deja de sumar a los gastos.'))return;const rec=purchases.find(x=>x.id===p.id);if(rec){rec.status='void';rec.voidedAt=Date.now();save();render();}};div.append(b);list.append(div);});}
+ $('purchase-date').value=today();$('expense-month').value=today().slice(0,7);$('purchase-shop').addEventListener('change',()=>{$('other-shop-wrap').hidden=$('purchase-shop').value!=='OTRO';});
+ $('purchase-form').addEventListener('submit',e=>{e.preventDefault();const shop=($('purchase-shop').value==='OTRO' ? $('other-shop-name').value.trim() : $('purchase-shop').value.trim()),date=$('purchase-date').value,amount=parseCents($('purchase-amount').value),note=$('purchase-note').value.trim();if(!shop||!validDate(date)||amount===null){alert('Revisa comercio, fecha e importe. Usa por ejemplo 23,45.');return;}let lines;try{lines=getLines();}catch(err){alert(err.message);return;}if(lines.length>250){alert('Máximo 250 líneas por compra.');return;}if(lines.length&&lines.reduce((sum,x)=>sum+x.subtotalCents,0)!==amount){alert('No se puede guardar: la suma de los artículos no coincide con el total. Revisa las cantidades, los subtotales y las líneas de descuento/ajuste.');return;}const obj={id:(crypto?.randomUUID?.()||'c-'+Date.now()+'-'+Math.random()),shop,date,cents:amount,note,lines,status:'confirmed',createdAt:Date.now()};purchases.push(obj);if(!save()){purchases.pop();return;}$('purchase-shop').value='';$('other-shop-name').value='';$('other-shop-wrap').hidden=true;$('purchase-amount').value='';$('purchase-note').value='';$('purchase-lines').replaceChildren();sumLines();$('expense-month').value=date.slice(0,7);render();});
+ $('expense-month').addEventListener('change',render);$('print-expenses').addEventListener('click',()=>{render();window.print();});
+ function createReportFile(){const month=$('expense-month').value||today().slice(0,7);const selected=purchases.filter(p=>p.status!=='void'&&p.date.slice(0,7)===month);const pdf=window.compraReportPDF.build(month,selected);return new File([pdf],'COMPRA_FAMILIAR_informe_'+month+'.pdf',{type:'application/pdf'});}
+ $('download-report').addEventListener('click',()=>{try{const file=createReportFile(),url=URL.createObjectURL(file),a=document.createElement('a');a.href=url;a.download=file.name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);$('report-download-status').textContent='PDF generado. Comprueba la carpeta Descargas de tu dispositivo. Si tu navegador bloquea la descarga desde un HTML local, utiliza Imprimir → Guardar como PDF.';}catch(err){$('report-download-status').textContent='No se pudo generar el PDF: '+err.message;}});
+ $('share-report').addEventListener('click',async()=>{try{const file=createReportFile();if(navigator.share&&navigator.canShare?.({files:[file]})){await navigator.share({files:[file],title:'Informe Compra Familiar'});$('report-download-status').textContent='Menú de compartir abierto. Elige Drive y la carpeta deseada para subirlo; la aplicación no puede confirmar que se haya subido.';}else{$('report-download-status').textContent='Este navegador no permite compartir archivos directamente. Pulsa «Descargar PDF» y después compártelo con Drive desde Archivos/Descargas del teléfono.';}}catch(err){$('report-download-status').textContent=err.name==='AbortError'?'No se ha compartido el documento.':'No se pudo compartir: '+err.message;}});
+ $('export-data').addEventListener('click',()=>{const obj={schema:'compra-familiar-backup',version:1,exportedAt:new Date().toISOString(),list:window.compraListData?.read()||[],purchases};const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='compra-familiar-copia-'+today()+'.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);$('backup-status').textContent='Copia exportada (sin fotografías).';});
+ $('import-data').addEventListener('change',async e=>{const file=e.target.files?.[0];e.target.value='';if(!file)return;try{if(file.size>5*1024*1024)throw Error('Archivo demasiado grande.');const data=JSON.parse(await file.text());if(data.schema!=='compra-familiar-backup'||data.version!==1||!Array.isArray(data.list)||!Array.isArray(data.purchases)||data.list.length>5000||data.purchases.length>20000||!data.purchases.every(validItem)||!data.list.every(x=>x&&typeof x.id==='string'&&typeof x.name==='string'&&typeof x.qty==='number'&&x.qty>=1&&x.qty<=999))throw Error('Formato de copia no válido.');if(!confirm('Esto SUSTITUIRÁ todos los artículos y compras guardados en este navegador. ¿Continuar?'))return;const oldList=window.compraListData.read(),oldPurchases=purchases.slice();try{if(!localStorage)throw Error('Sin almacenamiento local');localStorage.setItem(PURCHASES,JSON.stringify(data.purchases));window.compraListData.replace(data.list);purchases=data.purchases;render();$('backup-status').textContent='Copia importada. Los justificantes no se han importado.';}catch(importError){try{localStorage.setItem(PURCHASES,JSON.stringify(oldPurchases));window.compraListData.replace(oldList);purchases=oldPurchases;render();}catch(rollbackError){}throw importError;}}catch(err){$('backup-status').textContent='No se pudo importar: '+err.message;}});
+ window.compraPurchasesReload=()=>{load();render();};
+ load();render();
+})();

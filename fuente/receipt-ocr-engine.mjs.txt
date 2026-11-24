@@ -1,0 +1,74 @@
+/* v0.14 candidata (NO desplegada): lectura de tickets EN EL DISPOSITIVO. Ninguna imagen ni texto sale del telefono: todo (pdf.js, Tesseract WASM, idioma espanol)
+   se sirve desde este mismo origen (./vendor/ocr/). Carga bajo demanda: sin tocar el OCR no se descarga nada. Devuelve lineas para receipt-ocr-core.mjs.
+   PDF con texto digital -> se lee el texto (exacto, sin OCR). Foto o PDF escaneado -> OCR (Tesseract LSTM, idioma spa, modelo rapido). */
+import {sniffType} from './receipts-core.mjs';
+const BASE=new URL('./vendor/ocr/',import.meta.url).href;
+export const OCR_LIMITS={maxBytes:12*1024*1024,maxPages:3,maxSide:3000,minSide:1500};
+export const BLUR_LIMIT=60; // varianza del laplaciano (ver tests/receipt-ocr-engine.cjs: calibrada con fotos sinteticas nitidas y borrosas)
+const mem=()=>{try{return performance.memory?Math.round(performance.memory.usedJSHeapSize/1048576):null;}catch{return null;}};
+function groupPdfItems(items){const rows=[];for(const it of items){if(!it.str||!it.str.trim())continue;const x=it.transform[4],y=it.transform[5],h=Math.abs(it.transform[3])||it.height||8;let r=rows.find(q=>Math.abs(q.y-y)<=Math.max(2,h*0.45));if(!r){r={y,h,parts:[]};rows.push(r);}r.parts.push({x,w:it.width,s:it.str});}
+ rows.sort((a,b)=>b.y-a.y);return rows.map(r=>{r.parts.sort((a,b)=>a.x-b.x);let out='',end=null;for(const p of r.parts){if(end!==null){const gap=p.x-end;out+=gap>r.h*2.2?'   ':gap>r.h*0.15?' ':'';}out+=p.s;end=p.x+p.w;}return {text:out.replace(/[\u0000-\u001f\u007f\u200b-\u200f\ufeff]/g,' ').replace(/\s+$/,''),conf:100,numConf:100};}).filter(l=>l.text);}
+const looksLikeReceiptText=lines=>{const t=lines.map(l=>l.text).join(' ');return t.replace(/\s/g,'').length>=40&&/\d[.,]\d{2}/.test(t);};
+async function loadPdf(bytes){const mod=await import(BASE+'pdf.min.mjs');mod.GlobalWorkerOptions.workerSrc=BASE+'pdf.worker.min.mjs';return mod.getDocument({data:bytes.slice(),isEvalSupported:false,useSystemFonts:false,disableFontFace:true,enableXfa:false}).promise;}
+function toGray(canvas){const ctx=canvas.getContext('2d',{willReadFrequently:true}),im=ctx.getImageData(0,0,canvas.width,canvas.height),d=im.data,n=canvas.width*canvas.height,g=new Uint8Array(n),hist=new Uint32Array(256);
+ for(let i=0,j=0;j<n;i+=4,j++){const v=(d[i]*299+d[i+1]*587+d[i+2]*114)/1000|0;g[j]=v;hist[v]++;}
+ let acc=0,lo=0,hi=255;for(let v=0;v<256;v++){acc+=hist[v];if(acc>=n*0.02){lo=v;break;}}acc=0;for(let v=255;v>=0;v--){acc+=hist[v];if(acc>=n*0.02){hi=v;break;}}
+ const span=Math.max(40,hi-lo);for(let j=0,i=0;j<n;j++,i+=4){let v=((g[j]-lo)*255/span);v=v<0?0:v>255?255:v;g[j]=v;d[i]=d[i+1]=d[i+2]=v;d[i+3]=255;}ctx.putImageData(im,0,0);return g;}
+export function sharpness(g,w,h){// varianza del laplaciano sobre una copia reducida a ~640 px de ancho (el ruido de la foto grande no cuenta como nitidez)
+ const f=Math.max(1,Math.floor(w/640)),W=Math.floor(w/f),H=Math.floor(h/f),s=new Float32Array(W*H);for(let y=0;y<H;y++)for(let x=0;x<W;x++){let a=0;for(let dy=0;dy<f;dy++)for(let dx=0;dx<f;dx++)a+=g[(y*f+dy)*w+x*f+dx];s[y*W+x]=a/(f*f);}
+ let sum=0,sum2=0,n=0;for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){const i=y*W+x,v=-4*s[i]+s[i-1]+s[i+1]+s[i-W]+s[i+W];sum+=v;sum2+=v*v;n++;}const m=sum/n;return n?sum2/n-m*m:0;}
+async function bitmapToCanvas(blob,maxSide=OCR_LIMITS.maxSide){const bmp=await createImageBitmap(blob,{imageOrientation:'from-image'});let {width:w,height:h}=bmp;const long=Math.max(w,h),short=Math.min(w,h);let k=1;if(long>maxSide)k=maxSide/long;else if(short<OCR_LIMITS.minSide/2&&long<OCR_LIMITS.minSide)k=Math.min(2,OCR_LIMITS.minSide/long);
+ const c=document.createElement('canvas');c.width=Math.max(1,Math.round(w*k));c.height=Math.max(1,Math.round(h*k));const ctx=c.getContext('2d',{willReadFrequently:true});ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);ctx.drawImage(bmp,0,0,c.width,c.height);bmp.close?.();return c;}
+let tess=null;
+async function worker(onProgress,lang=BASE+'lang'){const T=tess||(tess=await import(BASE+'tesseract.esm.min.js'));const create=T.createWorker||T.default?.createWorker;
+ const w=await create('spa',1,{workerPath:BASE+'worker.min.js',corePath:BASE,langPath:lang,gzip:false,workerBlobURL:false,cacheMethod:'none',logger:m=>{try{onProgress&&onProgress(m);}catch{}}});
+ await w.setParameters({tessedit_pageseg_mode:'4',preserve_interword_spaces:'1',user_defined_dpi:'300'});return w;}
+function linesFromBlocks(data){const out=[];for(const b of data.blocks||[])for(const p of b.paragraphs||[])for(const l of p.lines||[]){const words=(l.words||[]).filter(x=>x.text&&x.text.trim());if(!words.length)continue;
+  const text=l.text?String(l.text).replace(/\s+$/,''):words.map(x=>x.text).join(' ');const dig=words.filter(x=>/\d/.test(x.text)).map(x=>x.confidence);out.push({text,conf:Math.round(l.confidence??(words.reduce((a,x)=>a+x.confidence,0)/words.length)),numConf:dig.length?Math.round(Math.min(...dig)):100});}
+ return out;}
+/* v0.17 candidata: reconstruye FILAS a partir de las palabras con coordenadas (en vez de los bloques/columnas de Tesseract, que pierden la columna de importes en tickets anchos).
+   Una palabra pertenece a la fila cuyo centro vertical esta dentro de media altura de palabra; dentro de la fila se ordena por x y los huecos grandes se marcan con tres espacios. Devuelve {text,conf,numConf,y,h}. */
+export function linesFromWords(data){const ws=[];const walk=(l)=>{for(const w of l.words||[]){if(!w.text||!w.text.trim()||!w.bbox)continue;ws.push({s:w.text.trim(),x0:w.bbox.x0,x1:w.bbox.x1,y0:w.bbox.y0,y1:w.bbox.y1,c:w.confidence});}};
+ for(const b of data.blocks||[])for(const p of b.paragraphs||[])for(const l of p.lines||[])walk(l);
+ if(!ws.length&&Array.isArray(data.words))for(const w of data.words){if(w.text&&w.text.trim()&&w.bbox)ws.push({s:w.text.trim(),x0:w.bbox.x0,x1:w.bbox.x1,y0:w.bbox.y0,y1:w.bbox.y1,c:w.confidence});}
+ ws.sort((a,b)=>(a.y0+a.y1)-(b.y0+b.y1));const rows=[],med=a=>{const s=[...a].sort((x,y)=>x-y);return s[s.length>>1];};
+ for(const w of ws){const yc=(w.y0+w.y1)/2,h=Math.max(6,w.y1-w.y0);let best=null,bd=1e9;for(const r of rows){const d=Math.abs(yc-r.yc);if(d<=0.42*r.h&&d<bd){best=r;bd=d;}}
+  if(best){best.w.push(w);best.yc=med(best.w.map(x=>(x.y0+x.y1)/2));best.h=Math.max(6,med(best.w.map(x=>x.y1-x.y0)));}else rows.push({yc,h,w:[w]});} rows.sort((a,b)=>a.yc-b.yc);const out=[];for(const r of rows){r.w.sort((a,b)=>a.x0-b.x0);let text='',end=null;for(const w of r.w){if(end!==null){const gap=w.x0-end;text+=gap>r.h*2.2?'   ':gap>r.h*0.12?' ':'';}text+=w.s;end=w.x1;}
+  const dig=r.w.filter(x=>/\d/.test(x.s)).map(x=>x.c);out.push({text,conf:Math.round(r.w.reduce((a,x)=>a+x.c,0)/r.w.length),numConf:dig.length?Math.round(Math.min(...dig)):100,y:Math.round(r.yc),h:Math.round(r.h),x0:Math.min(...r.w.map(x=>x.x0)),x1:Math.max(...r.w.map(x=>x.x1))});}
+ return out;}
+/* v0.17 candidata: SEGUNDA LECTURA LOCALIZADA de la columna de importes. Tesseract descarta con frecuencia la columna derecha de importes (muy separada del texto); se vuelve a leer solo esa franja (con cifras)
+   y cada importe se une a la fila cuyo centro vertical coincide. No inventa nada: solo anade importes con formato 0,00 leidos en la franja y ausentes de la fila. */
+const AMT=/-?\d{1,4}[.,]\d{2}-?/g;
+async function amountColumn(w,canvas,rows,guard){
+ const good=rows.filter(r=>r.x1!==undefined&&r.conf>=40&&r.text.replace(/\s/g,'').length>=4);if(good.length<4)return null;
+ const X0=Math.min(...good.map(r=>r.x0)),X1=Math.max(...good.map(r=>r.x1)),W=X1-X0;if(W<canvas.width*0.2)return null;
+ const sx=Math.max(0,Math.round(X0+W*0.5)),ex=Math.min(canvas.width,Math.round(X1+W*0.08)),sw=ex-sx;
+ const y0=Math.max(0,Math.round(Math.min(...good.map(r=>r.y-r.h))-10)),y1=Math.min(canvas.height,Math.round(Math.max(...good.map(r=>r.y+r.h))+10));if(sw<40||y1-y0<40)return null;
+ const c=document.createElement('canvas');c.width=sw;c.height=y1-y0;c.getContext('2d').drawImage(canvas,sx,y0,sw,y1-y0,0,0,sw,y1-y0);
+ await guard(w.setParameters({tessedit_pageseg_mode:'6',tessedit_char_whitelist:'0123456789,.-€'}));
+ let cr;try{const r=await guard(w.recognize(c,{},{blocks:true,text:true}));cr=linesFromWords(r.data);}finally{c.width=c.height=0;await guard(w.setParameters({tessedit_char_whitelist:''}));}
+ const out=rows.map(x=>({...x}));let added=0;
+ for(const a of cr){const ams=a.text.match(AMT)||[];if(!ams.length)continue;const yy=a.y+y0;let best=null,bd=1e9;for(const r2 of out){const d=Math.abs(r2.y-yy);if(d<bd){bd=d;best=r2;}}
+  if(best&&bd<=0.7*Math.max(best.h,a.h)){const have=(best.text.match(AMT)||[]).map(s=>s.replace(',','.'));for(const s of ams){if(!have.includes(s.replace(',','.'))){best.text+='   '+s;added++;}}}
+  else{out.push({text:ams.join('   '),conf:a.conf,numConf:a.numConf,y:yy,h:a.h,x0:sx,x1:ex});added++;}}
+ out.sort((p,q)=>p.y-q.y);return added?out:null;}
+/* Lee un archivo (File/Blob JPG, PNG o PDF). Lanza Error en espanol si no es legible. */
+export const OCR_MODES=['4','3']; // segmentacion de pagina: 4 = columna unica (rapida, la mejor en general); 3 = automatica (rescate si el total no queda verificado)
+export async function readTicket(file,{onProgress,signal,timeoutMs=120000,accept,modes=OCR_MODES,rebuild=true,columns=true,maxSide=OCR_LIMITS.maxSide,langPath=BASE+'lang'}={}){
+ const stopped=()=>{if(signal&&signal.aborted)throw Error('Lectura cancelada.');};stopped();
+ const t0=performance.now(),m0=mem();if(!file||file.size>OCR_LIMITS.maxBytes)throw Error('El archivo es demasiado grande para leerlo en el teléfono (máximo 12 MB).');
+ const bytes=new Uint8Array(await file.arrayBuffer()),type=sniffType(bytes);if(!['image/jpeg','image/png','application/pdf'].includes(type))throw Error('Para leer el ticket usa una foto JPG o PNG, o un PDF.');
+ let lines=[],source='ocr',pages=1,sharp=null,ocrMs=0,ocrCanvases=[],passes=[];
+ if(type==='application/pdf'){onProgress&&onProgress({status:'Abriendo PDF'});let pdf;try{pdf=await loadPdf(bytes);}catch{throw Error('No se pudo abrir el PDF (¿está protegido o dañado?).');}
+  pages=Math.min(pdf.numPages,OCR_LIMITS.maxPages);for(let i=1;i<=pages;i++){const pg=await pdf.getPage(i),tc=await pg.getTextContent();lines.push(...groupPdfItems(tc.items));}
+  if(looksLikeReceiptText(lines)){source='pdf-texto';await pdf.destroy?.();}
+  else{lines=[];source='ocr-pdf';for(let i=1;i<=pages;i++){const pg=await pdf.getPage(i),v0=pg.getViewport({scale:1}),sc=Math.max(1,Math.min(4,OCR_LIMITS.minSide*0.8/Math.min(v0.width,v0.height)));const vp=pg.getViewport({scale:sc}),c=document.createElement('canvas');c.width=Math.round(vp.width);c.height=Math.round(vp.height);const ctx=c.getContext('2d',{willReadFrequently:true});ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);await pg.render({canvasContext:ctx,viewport:vp}).promise;ocrCanvases.push(c);}await pdf.destroy?.();}}
+ else ocrCanvases.push(await bitmapToCanvas(new Blob([bytes],{type}),maxSide));
+ let meanConf=null;
+ if(ocrCanvases.length){let w=null,timedOut=false,to=null,rejectStop;const stopP=new Promise((_,rej)=>{rejectStop=rej;});stopP.catch(()=>{});const guard=p=>Promise.race([p,stopP]);const kill=()=>{try{w&&w.terminate();}catch{}rejectStop(Error('stop'));};if(signal)signal.addEventListener('abort',kill,{once:true});to=setTimeout(()=>{timedOut=true;kill();},timeoutMs);try{stopped();const grays=ocrCanvases.map(toGray);sharp=Math.round(sharpness(grays[0],ocrCanvases[0].width,ocrCanvases[0].height));onProgress&&onProgress({status:'Cargando el lector de texto'});const wp=worker(onProgress,langPath);wp.then(x=>{if(signal&&signal.aborted||timedOut){try{x.terminate();}catch{}}},()=>{});w=await guard(wp);const t1=performance.now();
+   for(let mi=0;mi<modes.length;mi++){if(mi>0){onProgress&&onProgress({status:'Repasando el ticket con otra lectura…'});await guard(w.setParameters({tessedit_pageseg_mode:modes[mi]}));}const ls=[];for(const c of ocrCanvases){const r=await guard(w.recognize(c,{},{blocks:true,text:true}));ls.push(...(rebuild?linesFromWords(r.data):linesFromBlocks(r.data)));}passes.push(ls);if(columns&&rebuild&&ocrCanvases.length===1){onProgress&&onProgress({status:'Repasando los importes…'});const mg=await amountColumn(w,ocrCanvases[0],ls,guard);await guard(w.setParameters({tessedit_pageseg_mode:modes[mi]}));if(mg){passes.push(mg);if(!accept||accept(mg))break;}}if(!accept||accept(ls))break;}lines=passes[0];ocrMs=Math.round(performance.now()-t1);}
+  catch(e){if(signal&&signal.aborted)throw Error('Lectura cancelada.');if(timedOut)throw Error('La lectura tarda demasiado en este teléfono. Prueba con una foto más pequeña o introduce la compra a mano.');throw e;}
+  finally{clearTimeout(to);try{signal&&signal.removeEventListener('abort',kill);}catch{}try{await w?.terminate();}catch{}for(const c of ocrCanvases){c.width=c.height=0;}}
+  const cs=lines.map(l=>l.conf);meanConf=cs.length?Math.round(cs.reduce((a,b)=>a+b,0)/cs.length):0;}
+ const m1=mem();
+ return {lines,passes:passes.length?passes:[lines],source,pages,quality:{sharpness:sharp,blurry:sharp!==null&&sharp<BLUR_LIMIT,meanConf,empty:lines.length===0},stats:{ms:Math.round(performance.now()-t0),ocrMs,heapMB:m1,heapDeltaMB:m0!==null&&m1!==null?m1-m0:null}};}

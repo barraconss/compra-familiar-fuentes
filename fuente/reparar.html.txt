@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reparar Compra Familiar (PREPRODUCCIÓN)</title>
+<style>body{font-family:system-ui,sans-serif;margin:0;padding:24px 16px;max-width:520px;margin-inline:auto;color:#1c302b;background:#f5f7f3;line-height:1.5}h1{font-size:1.3rem}button,a.btn{display:inline-block;min-height:44px;padding:10px 18px;border:0;border-radius:12px;background:#173f39;color:#fff;font:inherit;font-weight:700;text-decoration:none;margin:8px 0}#estado{background:#fff;border:1px solid #cbdaca;border-radius:10px;padding:12px;margin:12px 0}</style></head>
+<body><h1>Reparar la aplicación de pruebas</h1>
+<p>Esta página elimina únicamente el «motor sin conexión» (Service Worker) y su memoria temporal de <strong>esta</strong> dirección de pruebas. No borra tus listas, compras, fotos ni justificantes, ni cierra tu sesión.</p>
+<button type="button" id="reparar">Reparar ahora</button>
+<div id="estado" role="status" aria-live="polite">Pulsa «Reparar ahora».</div>
+<a class="btn" id="volver" href="./" hidden>Volver a la aplicación</a>
+<script src="reparar.js"></script></body></html>
