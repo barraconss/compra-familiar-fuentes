@@ -1,0 +1,170 @@
+[
+  {
+    "original": "app-01.js",
+    "distribucion": "fuente/app-01.js.txt",
+    "adaptado": false,
+    "sha256": "C19835275BF0549983E56ABABF9DE7555A41BE3EDF8AEDA0657E1090E1050526"
+  },
+  {
+    "original": "app-02.js",
+    "distribucion": "fuente/app-02.js.txt",
+    "adaptado": false,
+    "sha256": "953B4CACAAD5622C568DF57565E907ADFBA91D7844057946CB6C297F04114198"
+  },
+  {
+    "original": "app-03.js",
+    "distribucion": "fuente/app-03.js.txt",
+    "adaptado": false,
+    "sha256": "343A594C7E96C826C50553B17A0C85B354CDEA912292B72D6757D8CB74C88BAD"
+  },
+  {
+    "original": "app-04.js",
+    "distribucion": "fuente/app-04.js.txt",
+    "adaptado": false,
+    "sha256": "F93F761357F64EB5B4679B7CE89AEC68A457DF477A321C81D98C40A49C63A016"
+  },
+  {
+    "original": "app-05.js",
+    "distribucion": "fuente/app-05.js.txt",
+    "adaptado": false,
+    "sha256": "CFA8F19446447E0397ECDCEAB02A041048727451006BDC71F0AFE0919757ACD9"
+  },
+  {
+    "original": "app-06.js",
+    "distribucion": "fuente/app-06.js.txt",
+    "adaptado": false,
+    "sha256": "67A9848EB150C5C3366F405D7C40EBAA5A2F7CC3A137488F5359A440265E3BC9"
+  },
+  {
+    "original": "app-07.js",
+    "distribucion": "fuente/app-07.js.txt",
+    "adaptado": false,
+    "sha256": "0F7F79AA3C4E8DD6662ABFEA4E359499A364AF210897BD53C62BD42063239A94"
+  },
+  {
+    "original": "app-08.js",
+    "distribucion": "fuente/app-08.js.txt",
+    "adaptado": false,
+    "sha256": "14ACC54598E8D74DD870D9888D249D2D30549B5C5C20CA3E2D1CA24D8D1F2C14"
+  },
+  {
+    "original": "cf-dialog.mjs",
+    "distribucion": "fuente/cf-dialog.mjs.txt",
+    "adaptado": false,
+    "sha256": "A79040CB488C9F4270FAFCEFFF48A84A83E925EE674AD5C325A05EE1770E8539"
+  },
+  {
+    "original": "family-ui.mjs",
+    "distribucion": "fuente/family-ui.mjs.txt",
+    "adaptado": false,
+    "sha256": "EA02F325F7BA2C4DE386C28889EBC93095921967676ADC163CEBC1BFD9793C6D"
+  },
+  {
+    "original": "index.html",
+    "distribucion": "fuente/index.html.txt",
+    "adaptado": true,
+    "sha256": "8048B2F36F862FF5EE3AB57D65667E4872DB19AE83110DCE8BFEAF7D89FD2B2E"
+  },
+  {
+    "original": "manifest.webmanifest",
+    "distribucion": "fuente/manifest.webmanifest.txt",
+    "adaptado": false,
+    "sha256": "6D070381A51D8B8E2E702D0F2FBACA55EADE41B4F8E3DA9BDC67F4044FAA9B49"
+  },
+  {
+    "original": "navigation.js",
+    "distribucion": "fuente/navigation.js.txt",
+    "adaptado": false,
+    "sha256": "808E847A40B75946F3521A10078E9F06784AA342650CF4746128654733269E1C"
+  },
+  {
+    "original": "purchase-receipts-ui.mjs",
+    "distribucion": "fuente/purchase-receipts-ui.mjs.txt",
+    "adaptado": false,
+    "sha256": "E19159E3C50D6F5BB7DDAA616388EA830CEE9495ECC5EF82E5D58CECC4A6427D"
+  },
+  {
+    "original": "receipt-ocr-core.mjs",
+    "distribucion": "fuente/receipt-ocr-core.mjs.txt",
+    "adaptado": false,
+    "sha256": "FDF6FA3835C3BF57A61375A9CA76334CE76B463C7D1753B1C54949F9D9E2F165"
+  },
+  {
+    "original": "receipt-ocr-engine.mjs",
+    "distribucion": "fuente/receipt-ocr-engine.mjs.txt",
+    "adaptado": false,
+    "sha256": "B7223F10275243082EE58F95D8D65A26794F3E4605764931A2DA07494E5285EB"
+  },
+  {
+    "original": "receipt-ocr-paddle.mjs",
+    "distribucion": "fuente/receipt-ocr-paddle.mjs.txt",
+    "adaptado": false,
+    "sha256": "167F2564D4E2983AEBD196E4ABFA165EAF4E1D9BCB966DF9B482ABCEA51DC4C2"
+  },
+  {
+    "original": "receipt-ocr-router.mjs",
+    "distribucion": "fuente/receipt-ocr-router.mjs.txt",
+    "adaptado": false,
+    "sha256": "4BD2A68DD8E3C604007169D97F9FAF8E4F6471A30CB2835310CF69144033FDC5"
+  },
+  {
+    "original": "receipt-ocr-ui.mjs",
+    "distribucion": "fuente/receipt-ocr-ui.mjs.txt",
+    "adaptado": false,
+    "sha256": "73CEADBA4FB5469A39EF98EF5D65EE1A6E36E6F4CBDA9D857DEC6FB428BDF91B"
+  },
+  {
+    "original": "receipts-backup.mjs",
+    "distribucion": "fuente/receipts-backup.mjs.txt",
+    "adaptado": false,
+    "sha256": "F1AF576055A0BD919597A14E7C40903AF514D6FDBB90F6A9549D710EE427F5A8"
+  },
+  {
+    "original": "receipts-core.mjs",
+    "distribucion": "fuente/receipts-core.mjs.txt",
+    "adaptado": false,
+    "sha256": "A1C890BE43E1249E0C34E6039DECBB6F758B2833DE177E0307DCFECD73698C12"
+  },
+  {
+    "original": "reparar.html",
+    "distribucion": "fuente/reparar.html.txt",
+    "adaptado": false,
+    "sha256": "CD6C7836B60A70BD008A66FA3A4269014036B1AADC742602B417A2622F8C0479"
+  },
+  {
+    "original": "reparar.js",
+    "distribucion": "fuente/reparar.js.txt",
+    "adaptado": false,
+    "sha256": "CB3F2644ECCFEBA4E414DF672F905B147B0FF109462B8862E4FDC782DAE12BC5"
+  },
+  {
+    "original": "shared-purchases-core.mjs",
+    "distribucion": "fuente/shared-purchases-core.mjs.txt",
+    "adaptado": false,
+    "sha256": "8A4037F57262D873D844F0659F6B438B7E636BE4D236554C045D3144DF571BA8"
+  },
+  {
+    "original": "sw.js",
+    "distribucion": "fuente/sw.js.txt",
+    "adaptado": false,
+    "sha256": "CAC79B9DB469E7B1ED0A8F4079A02157DD8F344252815489B923E072FDB7F467"
+  },
+  {
+    "original": "sync-bridge.mjs",
+    "distribucion": "fuente/sync-bridge.mjs.txt",
+    "adaptado": true,
+    "sha256": "83D8B05E89C937062882C8AEE3B12E8E5210C873903421B4D56F4604B375123F"
+  },
+  {
+    "original": "sync-core.mjs",
+    "distribucion": "fuente/sync-core.mjs.txt",
+    "adaptado": false,
+    "sha256": "8CF4D140E021869CCEF38EAA900E48E338DA2FF9BB85CD15038AC763FFEAAD5B"
+  },
+  {
+    "original": "sync-purchases.mjs",
+    "distribucion": "fuente/sync-purchases.mjs.txt",
+    "adaptado": false,
+    "sha256": "F30A328B94C3974B665DC0795AF08FCF1A98309F81AFE1A4931C94ADE7F3D8A4"
+  }
+]

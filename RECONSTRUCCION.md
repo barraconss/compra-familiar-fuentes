@@ -1,0 +1,7 @@
+# Mapa de fuentes y requisitos de reconstrucción
+
+index.html carga app-01.js a app-08.js en orden, después navigation.js, el cliente Supabase y sync-config.js. sync-bridge.mjs, sync-purchases.mjs y family-ui.mjs coordinan sincronización, compras e interfaz. Los módulos receipts y receipt-ocr separan almacenamiento, interfaz, extracción y motores. sw.js y manifest.webmanifest definen el comportamiento PWA. reparar.html y reparar.js corresponden al flujo de reparación local.
+
+index.html referencia supabase-2.57.0.js. Faltan el cliente Supabase, PDF.js, Tesseract y datos de idioma, PaddleOCR y modelos, ONNX Runtime, iconos y configuración de sincronización. Los módulos apuntan a vendor/ocr y vendor/paddle. Antes de redistribuir dependencias, documentar versiones, fuentes, hashes, avisos y derechos de cada componente. No se incluyen esquemas, credenciales ni datos.
+
+Para estudiar una reconstrucción, trabaja en una carpeta separada. Quita solo el último sufijo .txt de las rutas del inventario. Conserva las rutas y originales. Prepara una configuración de desarrollo con sincronización desactivada, sin clave ni URL real. Revisa primero las rutas del service worker y las llamadas externas. Una prueba de sincronización requerirá backend separado y datos ficticios. Esta edición no se ejecutó ni se validó como proyecto reproducible.
